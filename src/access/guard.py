@@ -86,11 +86,22 @@ def guard_plan(plan: QueryPlan, gate: AccessGate) -> Decision:
     if denied_periods:
         causes.append("outside permitted period: " + ", ".join(denied_periods))
 
+    # The explanation must match the actual cause. The derivation argument
+    # applies to a denied tag combined with a permitted one; attaching it to a
+    # date that simply falls outside the role's window would misdescribe the
+    # refusal to whoever reads the audit log.
+    if denied_tags and len(plan.tags) > len(denied_tags):
+        rationale = (" A value derived from restricted data discloses that "
+                     "data, so the whole request is refused rather than "
+                     "partially answered.")
+    elif denied_tags:
+        rationale = " This role has no access to that category of data."
+    else:
+        rationale = " This role may only read the most recent fiscal years."
+
     return Decision(
         False,
-        f"Refused for {gate.role.name} — {'; '.join(causes)}. "
-        "A value derived from restricted data discloses that data, so the "
-        "whole request is refused rather than partially answered.",
+        f"Refused for {gate.role.name} — {'; '.join(causes)}.{rationale}",
         denied_tags=denied_tags,
         denied_periods=tuple(denied_periods),
     )

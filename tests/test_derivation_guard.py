@@ -45,6 +45,31 @@ def test_ceo_gets_the_same_plan_executed():
                       AccessGate(ROLES["CEO"], CORPUS_MAX_FY)).allowed
 
 
+def test_period_only_refusal_does_not_invoke_the_derivation_argument():
+    """A refusal must explain its actual cause. A date outside the role's
+    window has nothing to do with deriving a restricted value, and saying so
+    would misdescribe the refusal to whoever reads the audit log."""
+    plan = QueryPlan(intent="metric", metrics=("net_sales",), periods=("FY2023",),
+                     tags=(Tag.FIN_STATEMENTS,))
+    decision = guard_plan(plan, AccessGate(ROLES["ANALYST"], CORPUS_MAX_FY))
+
+    assert not decision.allowed
+    assert "derived" not in decision.reason.lower()
+    assert "most recent fiscal years" in decision.reason
+
+
+def test_wholly_restricted_plan_is_not_described_as_derivation():
+    """Nothing is being combined when every tag is denied, so the refusal
+    should say the category is off-limits rather than invoke arithmetic."""
+    plan = QueryPlan(intent="metric", metrics=("headcount",), periods=("FY2025",),
+                     tags=(Tag.HR_HEADCOUNT,))
+    decision = guard_plan(plan, AccessGate(ROLES["CTO"], CORPUS_MAX_FY))
+
+    assert not decision.allowed
+    assert "derived" not in decision.reason.lower()
+    assert "no access to that category" in decision.reason
+
+
 def test_analyst_refusal_names_both_causes():
     """ANALYST is restricted on tag and on time, so a plan violating both must
     report both rather than stopping at the first failure."""

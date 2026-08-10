@@ -450,3 +450,87 @@ prompt, no answer body.** `data/audit.log` is gitignored regardless.
 
 **REJECTED** — Logging the full prompt for debuggability. It is genuinely
 useful and it would make the log the most sensitive file in the project.
+
+---
+
+## Part 6 — The walking skeleton
+
+### D28 · The order of operations is architecture, not scaffolding
+
+**WHY** — The skeleton contains three stubs (hardcoded facts, a keyword
+planner, string formatting) that later tasks replace entirely. What it must
+*not* contain is a temporary control flow, because that is the thing later
+tasks would inherit.
+
+**HOW** — `plan → guard → refuse-or-fetch → compose → audit` is fixed from this
+commit. Every stub is swapped out beneath it without the sequence changing, and
+`answer()` keeps its signature, so `test_skeleton_e2e.py` keeps passing as the
+real components land.
+
+**REJECTED** — Fetching first and filtering after, "just for now". The whole
+claim of this system is that restricted data is never fetched; a skeleton that
+violated it would have to be rewritten rather than filled in.
+
+---
+
+### D29 · A refusal must explain its actual cause
+
+**WHY** — Caught by running the demo, not by a test. Every refusal was emitting
+the same sentence — *"a value derived from restricted data discloses that
+data"* — including when ANALYST was refused purely because FY2023 falls outside
+its window. That has nothing to do with derivation. A refusal that misstates
+its own cause misleads whoever reads the audit log, which is the one artifact
+that has to be trustworthy.
+
+**HOW** — Three distinct rationales: derivation (some tags denied, some
+permitted — the leak case), category (all tags denied — nothing is being
+combined), and window (period only). Two tests now assert that a period-only or
+wholly-restricted refusal never mentions derivation.
+
+**REJECTED** — One generic message covering every case. Shorter, and it turns
+the audit log into something you cannot reason from.
+
+---
+
+### D30 · The skeleton answers with real figures
+
+**WHY** — Placeholder values like `revenue = 100` make a demo that proves
+nothing and hide unit and formatting bugs until much later.
+
+**HOW** — `SKELETON_FACTS` carries the actual numbers from the committed
+filings — net sales $416,161M / $391,035M / $383,285M, headcount 166,000 /
+164,000, each with its real page. Every answer the skeleton gives is true, and
+`format_value()` had to handle millions versus people from the first commit.
+
+**REJECTED** — Dummy data with a "replace me" comment. It would have deferred
+the unit problem to Task 6 and made the skeleton undemonstrable in the
+meantime.
+
+---
+
+### D31 · The CLI exits non-zero on a refusal
+
+**WHY** — The demo script and any future CI check need to assert that a
+refusal actually happened. Parsing stdout for the word "REFUSED" is brittle.
+
+**HOW** — Exit code `3` when `allowed` is false, `0` otherwise. A refusal is a
+correct outcome, so it is distinguished from a crash (`1`) as well as from
+success.
+
+**REJECTED** — Always exiting 0. It would make "the CTO was refused" untestable
+from outside the process.
+
+---
+
+### D32 · Values are rendered as label-and-value, not as sentences
+
+**WHY** — "Net sales for FY2025 **was** $416,161 million" — no single verb
+agrees with both "net sales" (plural) and "headcount" (singular), and the
+mismatch is visible in the demo.
+
+**HOW** — `Net sales for FY2025: $416,161 million.` The unit travels with the
+number via `format_value()`, since statements are reported in millions and
+headcount in people.
+
+**REJECTED** — Per-metric grammar rules. Real work, zero marks, and the LLM
+replaces this phrasing in Task 8 anyway.
