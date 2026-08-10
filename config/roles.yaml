@@ -1,0 +1,39 @@
+# Permission model. Roles live here, not in code, so a deployment can be
+# retuned per client without touching the enforcement logic.
+#
+# Two independent restriction dimensions:
+#   allowed_tags / denied_tags  — WHAT kind of data
+#   recent_years_only           — HOW FAR BACK, relative to the newest fiscal
+#                                 year present in the ingested corpus (not the
+#                                 wall clock, so tests stay deterministic)
+#
+# denied_tags is subtracted from allowed_tags at load time to produce one
+# resolved set. A single set means there is exactly one thing to test and no
+# ordering bug between allow and deny rules.
+
+roles:
+  CEO:
+    description: Full access to every document and every period.
+    allowed_tags: ["*"]
+    recent_years_only: null
+
+  CTO:
+    description: >
+      Broad access for technical and financial planning, but no visibility of
+      people data. Headcount is denied alongside compensation because the two
+      combine with permitted financials to disclose one another.
+    allowed_tags: ["*"]
+    denied_tags:
+      - hr.headcount
+      - hr.compensation
+    recent_years_only: null
+
+  ANALYST:
+    description: >
+      Published financial statements only, and only the two most recent fiscal
+      years. Restricted on both tag and time to demonstrate that the permission
+      model has real dimensions rather than a hard-coded conditional.
+    allowed_tags:
+      - financials.statements
+      - financials.segment
+    recent_years_only: 2

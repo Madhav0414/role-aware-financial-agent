@@ -22,6 +22,7 @@ Run:  python scripts/fetch_data.py
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -34,7 +35,14 @@ from pathlib import Path
 
 import pandas as pd
 
-UA = "Madhav Sharma madhavprashar04@gmail.com"
+# SEC asks that automated clients identify themselves with a contact address.
+# Read from the environment rather than hardcoded: a personal email does not
+# belong in a repository that gets shared. The corpus is already committed, so
+# this script only needs to run if you want to refresh the data.
+UA = os.environ.get(
+    "SEC_USER_AGENT",
+    "azentio-assignment financial-agent (set SEC_USER_AGENT to your contact)",
+)
 CIK = 320193  # Apple Inc.
 RAW = Path("data/raw")
 EDGE = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
