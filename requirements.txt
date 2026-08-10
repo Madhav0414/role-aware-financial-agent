@@ -1,0 +1,7 @@
+pymupdf>=1.24      # PDF text + page provenance; no poppler system dependency
+pandas>=2.0        # Excel and HTML table parsing
+openpyxl>=3.1      # .xlsx engine for pandas
+lxml>=5.0          # HTML table parser behind pandas.read_html
+numpy>=1.26        # BM25 scoring
+pyyaml>=6.0        # roles.yaml / sources.yaml
+pytest>=8.0        # tests
