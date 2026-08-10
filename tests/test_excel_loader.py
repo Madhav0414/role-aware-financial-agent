@@ -115,8 +115,26 @@ def test_synthetic_headcount_is_tagged_hr_and_skips_the_banner():
     # Row 1 is the SYNTHETIC banner and must not become a fact.
     assert all("SYNTHETIC" not in f.metric.upper() for f in facts)
 
-    fy2025 = sum(f.value for f in facts if f.fiscal_year == 2025)
-    assert fy2025 == 166_000  # reconciles with the figure the 10-K states
+    # The loader also emits a company-wide `headcount` total, so summing every
+    # fact would double count. The departments alone must reconcile.
+    departments = sum(f.value for f in facts
+                      if f.fiscal_year == 2025 and f.metric != "headcount")
+    assert departments == 166_000  # the figure the FY2025 10-K states
+
+    total = [f for f in facts if f.metric == "headcount" and f.fiscal_year == 2025]
+    assert len(total) == 1
+    assert total[0].value == 166_000
+
+
+def test_a_company_wide_headcount_total_exists():
+    """Without it, "revenue per employee" has no metric to resolve to — only
+    per-department names — and the derivation demo would silently answer with
+    revenue alone instead of being refused."""
+    facts = load_headcount_workbook(
+        RAW / "_synthetic" / "headcount_by_department.xlsx")
+
+    totals = {f.period: f.value for f in facts if f.metric == "headcount"}
+    assert totals == {"FY2024": 164_000.0, "FY2025": 166_000.0}
 
 
 def test_nested_categories_do_not_collapse_into_one_metric():

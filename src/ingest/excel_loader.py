@@ -300,4 +300,23 @@ def load_headcount_workbook(path: Path) -> list[Fact]:
             locator=f"Headcount!R{row_number + 3}",
             tag=Tag.HR_HEADCOUNT,
         ))
+
+    # A company-wide `headcount` total, derived by summing the departments.
+    #
+    # Without it there is no metric a question like "revenue per employee" can
+    # resolve to — only per-department names — so the derivation demo would
+    # silently answer with revenue alone. The sum reconciles by construction
+    # with the figure each 10-K states on page 8 (161,000 / 164,000 / 166,000),
+    # which `scripts/make_synthetic_hr.py` asserts at generation time.
+    by_year: dict[int, float] = {}
+    for fact in facts:
+        by_year[fact.fiscal_year] = by_year.get(fact.fiscal_year, 0.0) + fact.value
+
+    for fiscal_year, total in sorted(by_year.items()):
+        facts.append(Fact(
+            metric="headcount", value=total, unit="people",
+            period=f"FY{fiscal_year}", fiscal_year=fiscal_year,
+            source=path.name, locator="Headcount!total",
+            tag=Tag.HR_HEADCOUNT,
+        ))
     return facts

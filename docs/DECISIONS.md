@@ -805,3 +805,104 @@ can regenerate every artifact from the committed raw files.
 
 **REJECTED** — Incremental upserts keyed on a content hash. The right answer at
 100× the data, and premature at this one.
+
+---
+
+## Part 10 — The agent layer
+
+### D47 · The model is optional, and it proved its worth immediately
+
+**WHY** — Half the assignment's marks are for running end to end. A system that
+fails because an evaluator has no key has failed for a reason unrelated to its
+design.
+
+**HOW** — `complete()` returns `None` on *any* failure — missing key, missing
+SDK, network error, rate limit, bad model id — and the caller always has a
+deterministic path. Every figure and every access decision is computed in
+Python; the model only phrases the result.
+
+**THIS WAS NOT HYPOTHETICAL.** During the build the configured Anthropic key
+turned out to have no credit balance. Every model call returned 400. The system
+answered every question correctly throughout — right figures, right citations,
+right refusals — and the only visible difference was plainer prose. A total
+provider outage cost the demo nothing.
+
+**REJECTED** — Requiring a key and failing loudly without one. Cleaner code,
+and it would have lost half the marks to someone else's billing page.
+
+---
+
+### D48 · Only the exception type is logged, never the SDK's message
+
+**WHY** — Error text from a provider SDK can echo request details, and a log
+line written on every failed call is exactly the thing that gets pasted into a
+chat while debugging.
+
+**HOW** — `log.warning` records `type(exc).__name__` and a static hint listing
+the causes seen in practice. The hint matters because a wrong model id, an
+expired key and an exhausted account all surface as the same exception type,
+so the type alone does not tell you which.
+
+**REJECTED** — Logging `str(exc)`. It is what makes debugging easy, and it is
+how request contents end up somewhere they should not be.
+
+---
+
+### D49 · A metric may carry several tags, and the plan declares all of them
+
+**WHY** — Two tests failed and were right to. `net_sales` is reported both in
+the consolidated statement (`financials.statements`) and in the segment
+breakdown (`financials.segment`). An earlier version collapsed that to the
+single most-restrictive tag: safe, but it described consolidated net sales as
+segment data, which is simply untrue.
+
+**HOW** — `metric_tags.json` maps each metric to *every* tag it appears under.
+A plan declares the union, and the guard refuses if **any** declared tag is
+denied. Still fails closed, and no longer lies about what the data is.
+
+**REJECTED** — Picking the most restrictive tag. It would have kept the tests
+green by making the model of the data wrong.
+
+---
+
+### D50 · An unknown metric is treated as maximally restricted
+
+**WHY** — A name the system does not recognise cannot be checked. Defaulting an
+unknown metric to "unrestricted" is how a typo, or a probe, becomes a bypass.
+
+**HOW** — `_tags_of` returns `(HR_COMPENSATION,)` for anything absent from the
+map, so an unrecognised metric is denied to every role except CEO. A test asks
+for `not_a_real_metric` as ANALYST and asserts refusal.
+
+**REJECTED** — Returning an empty tag set for unknown metrics. `all()` over an
+empty set is `True`, so that would have silently permitted everything
+unrecognised — the failure would have looked like working code.
+
+---
+
+### D51 · The planner's aliases are consumed as they match
+
+**WHY** — "services revenue" contains "revenue". Without consuming the matched
+text, one question produced both `services_net_sales` and `net_sales`, and the
+answer reported two figures where the user asked for one.
+
+**HOW** — Aliases are tried longest-first and blanked out of the working string
+as they match, so a longer alias always wins and cannot be double-counted.
+
+**REJECTED** — Matching on word boundaries alone. It does not help here: both
+aliases are legitimate whole-word matches.
+
+---
+
+### D52 · "employee" singular is an alias, because the demo turns on it
+
+**WHY** — The alias list had "employees" but the phrase the entire derivation
+demonstration rests on — *"revenue per employee"* — is singular. The planner
+found no headcount metric, so the plan under-declared, and the CEO answer
+silently returned revenue alone.
+
+**HOW** — Both forms are listed. Caught by an end-to-end test rather than by a
+unit test, because each layer was individually correct.
+
+**REJECTED** — Stemming the question. A whole NLP dependency to fix one missing
+list entry.

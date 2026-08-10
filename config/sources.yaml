@@ -120,8 +120,37 @@ metric_aliases:
   services_net_sales: ["services revenue", "services sales", "services net sales"]
   mac_net_sales: ["mac revenue", "mac sales"]
   ipad_net_sales: ["ipad revenue", "ipad sales"]
-  headcount: ["headcount", "employees", "employee count", "staff", "workforce",
-              "how many people"]
+  # "employee" singular is listed because "revenue per employee" — the exact
+  # phrase the derivation demo turns on — does not contain the plural.
+  headcount: ["headcount", "head count", "employee", "employees",
+              "employee count", "staff", "workforce", "how many people"]
+
+# What a QUESTION is about, used to declare a plan's tags before any data is
+# touched. The guard cannot check what was not declared, so this mapping lives
+# in configuration the model cannot influence.
+#
+# Being wrong here is safe in one direction only: declaring a tag the question
+# does not need causes an unnecessary refusal, while failing to declare one
+# would let a request through unchecked. So the patterns are deliberately
+# broad.
+question_topic_tags:
+  - tag: hr.compensation
+    match: ["compensation", "salary", "salaries", "bonus", "pay ", "paid",
+            "equity award", "stock award", "remuneration", "earn"]
+  - tag: hr.headcount
+    match: ["employee", "headcount", "head count", "staff", "workforce",
+            "how many people", "hiring"]
+  - tag: narrative.risk
+    match: ["risk", "supply chain", "litigation", "lawsuit", "regulatory",
+            "tariff", "competition", "threat"]
+  - tag: governance
+    match: ["governance", "board of directors", "director", "audit committee",
+            "shareholder", "proxy", "vote"]
+  - tag: financials.segment
+    match: ["segment", "geographic", "by region", "by product", "iphone",
+            "mac ", "ipad", "wearables", "services revenue"]
+  - tag: narrative.mdna
+    match: ["management discussion", "outlook", "strategy", "management say"]
 
 # Chunking. 1,800 characters is roughly a page of narrative prose — large
 # enough to keep an argument intact, small enough that a retrieved chunk is

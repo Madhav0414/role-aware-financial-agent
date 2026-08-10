@@ -21,19 +21,38 @@ from src.access.model import Role, load_roles
 from src.agent.loop import answer
 
 ROLES_PATH = Path("config/roles.yaml")
-
-# The newest fiscal year in the committed corpus. Time windows are measured
-# from this rather than from today's date. Task 6 reads it from facts.db.
-CORPUS_MAX_FY = 2026
+UNDERSTANDING = Path("data/understanding")
 
 
-def render(result: dict) -> str:
+def corpus_anchor() -> int:
+    """Newest fiscal year in the corpus — the anchor for every time window.
+
+    Read from the data rather than hardcoded, so a role limited to "the two
+    most recent years" tracks the corpus instead of drifting as time passes.
+    """
+    from src.understanding.facts import corpus_max_fy
+    return corpus_max_fy(UNDERSTANDING / "facts.db")
+
+
+def render(result: dict, show_plan: bool = False) -> str:
     lines = []
+
+    if show_plan:
+        plan = result["plan"]
+        lines.append(f"PLAN  intent={plan['intent']} "
+                     f"metrics={','.join(plan['metrics']) or '-'} "
+                     f"periods={','.join(plan['periods'])} "
+                     f"tags={','.join(plan['tags']) or '-'}")
+        lines.append("")
+
     if result["allowed"]:
         lines.append(result["answer"])
         if result["citations"]:
             lines.append("")
-            lines.append("Sources: " + "; ".join(result["citations"]))
+            lines.append("Sources: " + "; ".join(result["citations"][:6]))
+        if result.get("source") == "llm":
+            lines.append("(phrased by the model; figures computed "
+                         "deterministically)")
     else:
         # A refusal states its reason. Silence, or an empty result, would be
         # indistinguishable from the data not existing.
@@ -53,7 +72,8 @@ def describe_roles(roles: dict[str, Role]) -> str:
     return "\n".join(out)
 
 
-def repl(gate: AccessGate, roles: dict[str, Role]) -> None:
+def repl(gate: AccessGate, roles: dict[str, Role],
+         show_plan: bool = False, use_llm: bool = True) -> None:
     print(f"Role: {gate.role.name}. Ask a question, or :help. :quit to exit.")
     while True:
         try:
@@ -78,11 +98,11 @@ def repl(gate: AccessGate, roles: dict[str, Role]) -> None:
             if name not in roles:
                 print(f"Unknown role {name}. Known: {', '.join(roles)}")
                 continue
-            gate = AccessGate(roles[name], CORPUS_MAX_FY)
+            gate = AccessGate(roles[name], gate.corpus_max_fy)
             print(f"Switched to {name}.")
             continue
         print()
-        print(render(answer(line, gate)))
+        print(render(answer(line, gate, use_llm=use_llm), show_plan=show_plan))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,21 +116,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ask", help="one question, then exit")
     parser.add_argument("--roles", action="store_true",
                         help="list roles and their permissions, then exit")
+    parser.add_argument("--plan", action="store_true",
+                        help="show the query plan the guard judged")
+    parser.add_argument("--no-llm", action="store_true",
+                        help="deterministic answers only, no model call")
     args = parser.parse_args(argv)
 
     if args.roles:
         print(describe_roles(roles))
         return 0
 
-    gate = AccessGate(roles[args.role], CORPUS_MAX_FY)
+    gate = AccessGate(roles[args.role], corpus_anchor())
 
     if args.ask:
-        result = answer(args.ask, gate)
-        print(render(result))
+        result = answer(args.ask, gate, use_llm=not args.no_llm)
+        print(render(result, show_plan=args.plan))
         # Non-zero exit on refusal so the demo script can assert on it.
         return 0 if result["allowed"] else 3
 
-    repl(gate, roles)
+    repl(gate, roles, show_plan=args.plan, use_llm=not args.no_llm)
     return 0
 
 

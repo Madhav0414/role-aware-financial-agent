@@ -24,6 +24,7 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
+from src.access.model import Tag
 from src.ingest.chunker import chunk_corpus, load_config
 from src.ingest.excel_loader import load_headcount_workbook, load_statement_workbook
 from src.understanding.facts import Fact, build_facts_db, corpus_max_fy
@@ -74,6 +75,32 @@ def write_summaries(chunks, facts, out_dir: Path) -> int:
         (summaries_dir / f"{name}.json").write_text(
             json.dumps(summary, indent=2), encoding="utf-8")
     return len(sources)
+
+
+def write_metric_tags(facts, out_dir: Path) -> int:
+    """Map every metric name to EVERY tag it appears under.
+
+    The planner must declare a plan's tags *before* any data is fetched — the
+    guard cannot check what was not declared. Deriving the map from the ingested
+    facts means it can never disagree with what is actually stored.
+
+    A metric legitimately spans tags: `net_sales` is reported both in the
+    consolidated statement (`financials.statements`) and in the segment
+    breakdown (`financials.segment`). An earlier version collapsed that to the
+    single most-restrictive tag, which was safe but described the data wrongly —
+    it claimed consolidated net sales was segment data. Recording the full set
+    and declaring all of it keeps the plan honest and still fails closed: the
+    guard refuses if *any* declared tag is denied.
+    """
+    mapping: dict[str, set[str]] = {}
+    for fact in facts:
+        mapping.setdefault(fact.metric, set()).add(fact.tag.value)
+
+    (out_dir / "metric_tags.json").write_text(
+        json.dumps({m: sorted(tags) for m, tags in sorted(mapping.items())},
+                   indent=2),
+        encoding="utf-8")
+    return len(mapping)
 
 
 def write_schema_notes(chunks, facts, out_dir: Path) -> None:
@@ -149,12 +176,14 @@ def build_all(raw_dir: Path = RAW, out_dir: Path = OUT,
     index.save(out_dir / "index" / "bm25.json")
 
     documents = write_summaries(chunks, facts, out_dir)
+    metrics = write_metric_tags(facts, out_dir)
     write_schema_notes(chunks, facts, out_dir)
 
     return {
         "facts": fact_count,
         "chunks": len(chunks),
         "documents": documents,
+        "metrics": metrics,
         "corpus_max_fy": corpus_max_fy(out_dir / "facts.db"),
         "tags": dict(Counter([c.tag.value for c in chunks]
                              + [f.tag.value for f in facts])),
