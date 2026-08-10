@@ -906,3 +906,76 @@ unit test, because each layer was individually correct.
 
 **REJECTED** — Stemming the question. A whole NLP dependency to fix one missing
 list entry.
+
+---
+
+## Part 11 — The feedback loop
+
+### D53 · Feedback runs strictly after the gate ⭐
+
+**WHY** — The obvious place to apply learned preferences is inside retrieval,
+where the scores are. That would make feedback a channel into the access
+decision: enough up-votes on a restricted passage and it starts surfacing.
+
+**HOW** — Re-ranking operates on the list the gate has already filtered. It can
+reorder what a role may see and nothing else. Two tests: twenty up-votes on a
+compensation chunk neither turn a CTO refusal into an answer, nor surface that
+chunk in a question the CTO *is* allowed to ask.
+
+Writing the first of those tests found something better than expected — the
+CTO's compensation question never reaches retrieval at all, because the guard
+refuses the plan first. Feedback cannot influence a decision made before
+feedback is consulted.
+
+**REJECTED** — Applying weights inside `BM25Index.search`. One less function
+call, and it would have put a user-controlled signal upstream of the access
+filter.
+
+---
+
+### D54 · Two mechanisms, deliberately different in kind
+
+**WHY** — Re-ranking alone changes *what the model sees* but cannot express
+"you looked at the right page and drew the wrong conclusion". A correction
+alone changes *how it reads* but cannot fix bad retrieval.
+
+**HOW** — Down-votes multiply a chunk's score by 0.5 and up-votes by 1.5,
+compounding across repeats so correcting the same mistake twice pushes further
+than once. Separately, a correction written against a similar question is
+injected as `<user_correction>`, placed last and explicitly labelled, so it
+cannot be mistaken for something read out of a filing. A correction is one
+person's opinion about a past answer; it must never outrank a cited figure.
+
+**REJECTED** — Fine-tuning on collected feedback. Wrong tool at this scale, and
+it would bake user opinion into weights where it can no longer be inspected or
+undone.
+
+---
+
+### D55 · Similarity is token overlap, not embeddings
+
+**WHY** — Same reasoning as BM25: no key, no download, and adequate for
+deciding whether two questions are about the same thing. Feedback must be
+*scoped* — a correction about risk factors reordering a revenue question would
+be worse than no feedback at all.
+
+**HOW** — Jaccard overlap of significant tokens, threshold 0.3, with a short
+stopword list so that "what was the…" does not make every question look alike.
+Tests assert a rephrasing matches and an unrelated question does not.
+
+**REJECTED** — Applying feedback globally. Simpler, and it makes the system get
+worse the more it is used.
+
+---
+
+### D56 · Retrieval over-fetches before re-ranking
+
+**WHY** — Re-ranking a list of exactly `k` results can only demote within it. A
+chunk that *should* rise into the top four can never get there, so a down-vote
+would push bad results down and pull nothing better up.
+
+**HOW** — `search_filings` fetches `k * 3` when feedback is active, re-ranks,
+then truncates to `k`.
+
+**REJECTED** — Re-ranking the whole corpus. Correct and needlessly expensive;
+three times the window is enough for a single vote to change the visible order.

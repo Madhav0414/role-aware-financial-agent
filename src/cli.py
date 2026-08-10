@@ -19,6 +19,7 @@ from pathlib import Path
 from src.access.gate import AccessGate
 from src.access.model import Role, load_roles
 from src.agent.loop import answer
+from src.feedback import store
 
 ROLES_PATH = Path("config/roles.yaml")
 UNDERSTANDING = Path("data/understanding")
@@ -75,6 +76,8 @@ def describe_roles(roles: dict[str, Role]) -> str:
 def repl(gate: AccessGate, roles: dict[str, Role],
          show_plan: bool = False, use_llm: bool = True) -> None:
     print(f"Role: {gate.role.name}. Ask a question, or :help. :quit to exit.")
+    # The most recent answer, so :up / :down / :correct know what they refer to.
+    last: dict | None = None
     while True:
         try:
             line = input(f"\n[{gate.role.name}] > ").strip()
@@ -86,9 +89,28 @@ def repl(gate: AccessGate, roles: dict[str, Role],
         if line in (":quit", ":q"):
             return
         if line == ":help":
-            print("  :role <NAME>   switch role (see :roles)\n"
-                  "  :roles         list roles and their permissions\n"
-                  "  :quit          exit")
+            print("  :role <NAME>      switch role (see :roles)\n"
+                  "  :roles            list roles and their permissions\n"
+                  "  :up               the last answer was good\n"
+                  "  :down             the last answer was wrong\n"
+                  "  :correct <text>   down-vote and say what it should say\n"
+                  "  :quit             exit")
+            continue
+
+        if line in (":up", ":down") or line.startswith(":correct "):
+            if last is None:
+                print("Ask something first.")
+                continue
+            verdict = "up" if line == ":up" else "down"
+            correction = line.split(maxsplit=1)[1] if line.startswith(":correct ") \
+                else None
+            store.record(role=gate.role.name, question=last["question"],
+                         answer=last["result"]["answer"], verdict=verdict,
+                         chunk_ids=[row["id"] for row
+                                    in last["result"].get("passages", [])],
+                         correction=correction)
+            print(f"Recorded. Ask the same question again to see the "
+                  f"ranking change.")
             continue
         if line == ":roles":
             print(describe_roles(roles))
@@ -102,7 +124,9 @@ def repl(gate: AccessGate, roles: dict[str, Role],
             print(f"Switched to {name}.")
             continue
         print()
-        print(render(answer(line, gate, use_llm=use_llm), show_plan=show_plan))
+        result = answer(line, gate, use_llm=use_llm)
+        last = {"question": line, "result": result}
+        print(render(result, show_plan=show_plan))
 
 
 def main(argv: list[str] | None = None) -> int:

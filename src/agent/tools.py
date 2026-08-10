@@ -71,19 +71,37 @@ def query_metrics(metrics: list[str], periods: list[str], *,
 
 def search_filings(question: str, *, gate: AccessGate, k: int = 5,
                    understanding_dir: Path = UNDERSTANDING,
-                   audit_path: Path | None = None) -> dict:
-    """Narrative passages from the BM25 index, filtered before scoring."""
+                   audit_path: Path | None = None,
+                   feedback_db: Path | None = None,
+                   use_feedback: bool = True) -> dict:
+    """Narrative passages from the BM25 index, filtered before scoring.
+
+    Feedback re-ranking runs *after* the gate, on a list from which restricted
+    material has already been removed. A user cannot up-vote their way into
+    data their role may not read.
+    """
     index = BM25Index.load(understanding_dir / "index" / "bm25.json")
-    hits = index.search(question, gate, k=k)
+    # Over-fetch before re-ranking, or a chunk demoted out of the top k could
+    # never be replaced by one promoted into it.
+    hits = index.search(question, gate, k=k * 3 if use_feedback else k)
+
+    reranked = False
+    if use_feedback:
+        from src.feedback import rerank
+
+        adjusted = rerank.apply(hits, question, db_path=feedback_db)
+        reranked = [c.id for c, _ in adjusted] != [c.id for c, _ in hits]
+        hits = adjusted[:k]
 
     decision = Decision(True, f"{len(hits)} passages returned")
     audit(decision, gate.role.name, f"search_filings({question[:60]!r})",
           path=audit_path)
     return _envelope(True, decision.reason,
-                     rows=[{"text": chunk.text, "citation":
-                            f"{chunk.source} {chunk.locator}",
+                     rows=[{"id": chunk.id, "text": chunk.text,
+                            "citation": f"{chunk.source} {chunk.locator}",
                             "tag": chunk.tag.value, "score": round(score, 3)}
-                           for chunk, score in hits])
+                           for chunk, score in hits],
+                     reranked_by_feedback=reranked)
 
 
 def get_schema(*, gate: AccessGate,

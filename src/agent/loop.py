@@ -21,6 +21,7 @@ from src.access.gate import AccessGate
 from src.access.guard import QueryPlan, guard_plan
 from src.agent import llm, tools
 from src.agent.planner import Planner
+from src.feedback import rerank
 from src.ingest.chunker import load_config
 from src.understanding.facts import corpus_max_fy
 
@@ -48,7 +49,9 @@ def _load_planner(understanding_dir: Path, config_path: Path) -> tuple[Planner, 
 
 def build_context(question: str, gate: AccessGate,
                   plan: QueryPlan | None = None,
-                  understanding_dir: Path = UNDERSTANDING) -> str:
+                  understanding_dir: Path = UNDERSTANDING,
+                  feedback_db: Path | None = None,
+                  use_feedback: bool = True) -> str:
     """Assemble everything the model will see.
 
     Both reads go through gated tools, so nothing restricted can enter here.
@@ -72,10 +75,19 @@ def build_context(question: str, gate: AccessGate,
                          f"citation=\"{row['citation']}\">{row['display']}</figure>")
 
     passages = tools.search_filings(question, gate=gate, k=4,
-                                    understanding_dir=understanding_dir)
+                                    understanding_dir=understanding_dir,
+                                    feedback_db=feedback_db,
+                                    use_feedback=use_feedback)
     for row in passages["rows"]:
         parts.append(f"<document citation=\"{row['citation']}\">\n"
                      f"{row['text']}\n</document>")
+
+    # Corrections are guidance, not evidence. They are labelled as a past user
+    # note and placed last so they cannot be mistaken for something read out of
+    # a filing — a correction must never outrank a cited figure.
+    if use_feedback:
+        for note in rerank.corrections_for(question, db_path=feedback_db):
+            parts.append(f"<user_correction>{note}</user_correction>")
 
     return "\n\n".join(parts)
 
@@ -119,7 +131,9 @@ def answer(question: str, gate: AccessGate,
            understanding_dir: Path = UNDERSTANDING,
            config_path: Path = CONFIG,
            audit_path: Path | None = None,
-           use_llm: bool = True) -> dict:
+           use_llm: bool = True,
+           feedback_db: Path | None = None,
+           use_feedback: bool = True) -> dict:
     """Answer a question under one role's permissions.
 
     Returns rather than raises on refusal: the caller must be able to tell
@@ -156,15 +170,23 @@ def answer(question: str, gate: AccessGate,
                                   gate=gate, understanding_dir=understanding_dir,
                                   audit_path=audit_path)["rows"] \
         if plan.metrics else []
-    passages = tools.search_filings(question, gate=gate, k=4,
-                                    understanding_dir=understanding_dir,
-                                    audit_path=audit_path)["rows"]
+    search = tools.search_filings(question, gate=gate, k=4,
+                                  understanding_dir=understanding_dir,
+                                  audit_path=audit_path,
+                                  feedback_db=feedback_db,
+                                  use_feedback=use_feedback)
+    passages = search["rows"]
+
+    corrections = rerank.corrections_for(question, db_path=feedback_db) \
+        if use_feedback else []
 
     deterministic = _compose_deterministic(figures, passages, plan)
     text, source = deterministic, "deterministic"
 
     if use_llm:
-        context = build_context(question, gate, plan, understanding_dir)
+        context = build_context(question, gate, plan, understanding_dir,
+                                feedback_db=feedback_db,
+                                use_feedback=use_feedback)
         if context.strip():
             phrased = llm.complete(
                 SYSTEM_PROMPT,
@@ -185,6 +207,8 @@ def answer(question: str, gate: AccessGate,
         "plan": plan_view,
         "figures": figures,
         "passages": passages,
+        "corrections_applied": corrections,
+        "reranked_by_feedback": search.get("reranked_by_feedback", False),
         "denied_tags": [],
         "denied_periods": [],
         "source": source,
