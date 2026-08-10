@@ -99,3 +99,21 @@ def default_tag_for_document(filename: str, cfg: dict) -> Tag:
         if rule["match"] in filename:
             return Tag(rule["tag"])
     return Tag.NARR_MDNA
+
+
+def allowed_tags_for_document(filename: str, cfg: dict) -> frozenset[Tag] | None:
+    """The only tags this document type may produce, or None if unconstrained.
+
+    Heading matching is a heuristic and will occasionally be wrong. This turns
+    the worst class of error into an impossibility: a proxy statement mentions
+    "financial statements" in its audit committee report, and without this
+    constraint that heading tagged proxy governance pages as
+    `financials.statements` — a tag the ANALYST role may read. Constraining the
+    tag space by document type means the mistake cannot produce a leak, only a
+    less precise tag within the same document's legitimate range.
+    """
+    for rule in cfg["document_defaults"]:
+        if rule["match"] in filename:
+            allowed = rule.get("allowed_tags")
+            return frozenset(Tag(t) for t in allowed) if allowed else None
+    return None

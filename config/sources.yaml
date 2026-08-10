@@ -71,15 +71,41 @@ section_tags:
   - match: "notes to consolidated financial statements"
     tag: financials.statements
 
-# Where a document's content falls before any heading has been seen, and where
-# unmatched content lands. Keyed by a substring of the filename.
+# Per-document-type tagging rules, keyed by a substring of the filename.
+#
+#   tag           where content lands before any heading is seen
+#   allowed_tags  the ONLY tags this document type may ever produce
+#
+# `allowed_tags` exists because heading matching is not perfect. A proxy
+# statement mentions "financial statements" in its audit committee report, so
+# a heading rule tagged proxy governance pages as financials.statements — a tag
+# the ANALYST role is permitted to read. That is a leak, not an
+# over-restriction. Constraining the tag space by document type makes the
+# failure impossible rather than unlikely: a proxy simply cannot emit a
+# financial-statement tag, however its headings read.
 document_defaults:
   - match: "DEF14A"
     tag: governance
+    allowed_tags:
+      - governance
+      - hr.compensation
+      - narrative.risk
   - match: "10-K"
     tag: narrative.mdna
+    allowed_tags:
+      - narrative.mdna
+      - narrative.risk
+      - financials.statements
+      - financials.segment
+      - hr.headcount
+      - governance
   - match: "10-Q"
     tag: narrative.mdna
+    allowed_tags:
+      - narrative.mdna
+      - narrative.risk
+      - financials.statements
+      - financials.segment
 
 # How the planner maps everyday words onto stored metric names. Extending this
 # is how the system learns new vocabulary without touching code.

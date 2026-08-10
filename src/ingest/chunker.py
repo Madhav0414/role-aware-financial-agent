@@ -19,7 +19,11 @@ import yaml
 
 from src.access.model import Tag
 from src.ingest.pdf_loader import load_pdf
-from src.ingest.tagger import default_tag_for_document, tag_for_heading
+from src.ingest.tagger import (
+    allowed_tags_for_document,
+    default_tag_for_document,
+    tag_for_heading,
+)
 
 
 @dataclass(frozen=True)
@@ -69,7 +73,9 @@ def chunk_document(path: Path, fiscal_year: int, cfg: dict) -> list[Chunk]:
     max_chars = cfg["chunking"]["max_chars"]
     min_chars = cfg["chunking"]["min_chars"]
 
-    current_tag = default_tag_for_document(path.name, cfg)
+    default_tag = default_tag_for_document(path.name, cfg)
+    allowed = allowed_tags_for_document(path.name, cfg)
+    current_tag = default_tag
     chunks: list[Chunk] = []
     buffer: list[str] = []
     buffer_chars = 0
@@ -99,6 +105,11 @@ def chunk_document(path: Path, fiscal_year: int, cfg: dict) -> list[Chunk]:
                 continue
 
             heading_tag = tag_for_heading(stripped, cfg)
+            # A heading may only move the tag within this document type's
+            # legitimate range. A proxy cannot become a financial statement.
+            if heading_tag is not None and allowed is not None \
+                    and heading_tag not in allowed:
+                heading_tag = None
             if heading_tag is not None:
                 # A section boundary closes the current chunk. Letting text
                 # straddle it would put two sensitivities in one chunk, and the

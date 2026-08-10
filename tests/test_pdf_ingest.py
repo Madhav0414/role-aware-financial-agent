@@ -71,6 +71,39 @@ def test_numbered_item_headings_are_always_headings():
         CFG) is Tag.NARR_MDNA
 
 
+def test_a_proxy_can_never_produce_a_financial_statement_tag():
+    """Heading matching is a heuristic and will sometimes be wrong. This turns
+    the worst class of error into an impossibility.
+
+    The proxy mentions "financial statements" in its audit committee report,
+    and that heading tagged proxy governance pages as financials.statements —
+    a tag the ANALYST role may read. That is a leak, not an over-restriction.
+    """
+    from src.ingest.chunker import chunk_document
+
+    chunks = chunk_document(RAW / "DEF14A_2026.pdf", fiscal_year=2026, cfg=CFG)
+    produced = {c.tag for c in chunks}
+
+    assert Tag.FIN_STATEMENTS not in produced
+    assert Tag.FIN_SEGMENT not in produced
+    assert Tag.HR_HEADCOUNT not in produced
+    assert produced <= {Tag.GOVERNANCE, Tag.HR_COMPENSATION, Tag.NARR_RISK}
+
+
+def test_analyst_can_retrieve_nothing_from_the_proxy():
+    """End-to-end consequence of the rule above: the role restricted to
+    financial statements must not reach proxy content at all."""
+    from src.access.gate import AccessGate
+    from src.access.model import load_roles
+    from src.ingest.chunker import chunk_document
+
+    roles = load_roles(Path("config/roles.yaml"))
+    gate = AccessGate(roles["ANALYST"], 2026)
+    chunks = chunk_document(RAW / "DEF14A_2026.pdf", fiscal_year=2026, cfg=CFG)
+
+    assert gate.filter_chunks(chunks) == []
+
+
 def test_document_defaults_differ_by_filing_type():
     """A proxy statement is governance material by default; a 10-K is
     narrative. Content before the first heading has to land somewhere."""

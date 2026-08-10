@@ -726,3 +726,82 @@ while inside one.
 
 **REJECTED FOR NOW** — Not worth the remaining time when the failure mode
 restricts too much rather than too little.
+
+> **Superseded by D43.** The claim above — that heading mis-detection only
+> over-restricts — turned out to be wrong, and running live retrieval proved
+> it. See below.
+
+---
+
+## Part 9 — The understanding layer
+
+### D43 · Document type constrains the tag space ⭐
+
+**WHY** — Live retrieval showed ANALYST pulling DEF 14A pages tagged
+`financials.statements`: the Ernst & Young ratification, security ownership
+tables. The proxy mentions "financial statements" in its audit committee
+report, a heading rule matched it, and proxy governance content landed under a
+tag ANALYST is permitted to read. **That is a leak, not an over-restriction**,
+and it directly contradicts what D42 assumed.
+
+**HOW** — `config/sources.yaml` now declares `allowed_tags` per document type.
+A heading may only move the tag *within* that document's legitimate range, so a
+proxy statement can emit `governance`, `hr.compensation` or `narrative.risk`
+and nothing else. Two tests: the proxy can never produce a financial tag, and
+ANALYST retrieves **zero** chunks from it.
+
+The principle generalises: heading matching is a heuristic and will sometimes
+be wrong, so constrain the blast radius rather than trying to make the
+heuristic perfect. A wrong tag now costs precision inside one document instead
+of crossing a role boundary.
+
+**REJECTED** — Adding more heading patterns to disambiguate. It would have
+fixed this instance and left the class of bug intact.
+
+---
+
+### D44 · Repeated identical figures are collapsed at query time
+
+**WHY** — Each 10-K restates two prior years, and a figure appears in both the
+primary statement and its segment breakdown, so `net_sales` FY2025 is stored
+four times with four locators. They agree — that is a consistency check passed,
+not a conflict — but an answer citing the same number four times reads as a
+bug.
+
+**HOW** — `query_facts` collapses on `(metric, period, value, unit)`, keeping
+the earliest-sorted locator so the choice is deterministic across runs. Passing
+`dedupe=False` returns every occurrence, which is what an audit view wants.
+
+**REJECTED** — Deduplicating during ingestion. The duplicates are evidence that
+independent parts of the corpus agree; discarding them at write time would
+throw away a signal worth keeping.
+
+---
+
+### D45 · BM25 keeps digits as tokens
+
+**WHY** — Standard text pipelines strip numbers as noise. In this corpus they
+are the most discriminating terms available: "2025", "166", "416" are exactly
+what separates one otherwise near-identical passage from another.
+
+**HOW** — `tokenize` matches `[a-z0-9]+`, keeping alphanumeric runs. No
+stemming and no stopword list either — both would cost more than they return on
+741 chunks, and BM25's IDF already discounts terms that appear everywhere.
+
+**REJECTED** — A conventional NLP pipeline with stemming and stopwords. More
+machinery, worse results on the queries this system actually receives.
+
+---
+
+### D46 · The facts database is rebuilt from scratch, never updated in place
+
+**WHY** — An incrementally-updated database can drift from what the ingest
+pipeline currently produces, and the drift is invisible: the data looks fine,
+it is simply stale. On a corpus this size the rebuild costs three seconds.
+
+**HOW** — `build_facts_db` drops and recreates the table. `scripts/build_
+understanding.py` is safe to re-run at any time, which also means the evaluator
+can regenerate every artifact from the committed raw files.
+
+**REJECTED** — Incremental upserts keyed on a content hash. The right answer at
+100× the data, and premature at this one.
