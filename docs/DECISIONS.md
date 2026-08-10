@@ -1141,3 +1141,62 @@ whoever watches it.
 
 **REJECTED** — A scripted demo mode. More code, and it would show a rehearsal
 rather than the real system.
+
+---
+
+## Part 14 — Failing honestly
+
+### D66 · A weak match is not an answer ⭐
+
+**WHY** — Found by using the console rather than by a test. Asked *"what was
+evaluation of company in end of fy 2024"*, the system returned a paragraph of
+generic risk-factor prose, formatted exactly like a real answer. "Valuation" is
+not a reported figure in any SEC filing, so nothing matched, and the fallback
+presented the least-bad passage BM25 could find.
+
+Nothing was broken. The pipeline was green, the citation was real, and the
+answer was useless — **and it did not look useless**, which is the actual
+failure. A fluent irrelevance reads like an answer, so nobody checks whether it
+was one.
+
+**HOW** — A relevance floor (`MIN_RELEVANCE = 6.0`). Below it, no passage is
+shown at all and the system says it could not find anything, then names what
+*would* work — a reported figure with a fiscal year, or one of the narrative
+sections it does cover.
+
+**REJECTED** — Always showing the top match. It is what every naive RAG
+pipeline does, and it converts "I don't know" into a confident wrong answer.
+
+---
+
+### D67 · Narrative questions are first-class, not failed metric lookups
+
+**WHY** — The first fix over-corrected. *"What were the main risk factors?"* is
+a perfectly good question for this corpus, and it started coming back prefixed
+with "no reported figure matched" — a correct answer that read like an apology.
+
+**HOW** — The plan already knows the difference. A plan carrying **topic tags**
+means the question was *about* something the corpus covers, so its answer is
+presented plainly: `From the filings (10-K p.9): …`. Only a plan with neither
+metrics nor topic tags is a genuine dead end, and only that case gets hedged.
+
+The distinction was already present in the data model; the composer just was not
+reading it.
+
+**REJECTED** — A separate "is this a narrative question" classifier. The
+planner had already answered that question one layer up.
+
+---
+
+### D68 · A dead end should suggest a next step
+
+**WHY** — "I could not find that" is honest but leaves the user guessing what
+the system *does* hold.
+
+**HOW** — `Planner.suggest_metrics()` scores stored metric names by token
+overlap with the question and offers the closest, shortest few. Shown **only**
+when the question named neither a metric nor a topic — offering metric names for
+"what were the risk factors" would be noise on a question that already works.
+
+**REJECTED** — Always attaching suggestions. It made good answers look
+uncertain, which costs more than the help is worth.

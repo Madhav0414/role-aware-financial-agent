@@ -28,6 +28,11 @@ from src.understanding.facts import corpus_max_fy
 UNDERSTANDING = Path("data/understanding")
 CONFIG = Path("config/sources.yaml")
 
+# Below this BM25 score a passage is the least-bad match rather than a relevant
+# one. Presenting those as an answer is how a system becomes confidently
+# unhelpful — it reads like an answer, so nobody checks whether it was one.
+MIN_RELEVANCE = 6.0
+
 SYSTEM_PROMPT = """\
 You are a financial analyst assistant answering from Apple's public SEC filings.
 
@@ -93,16 +98,18 @@ def build_context(question: str, gate: AccessGate,
 
 
 def _compose_deterministic(figures: list[dict], passages: list[dict],
-                           plan: QueryPlan) -> str:
+                           plan: QueryPlan,
+                           suggestions: list[str] | None = None) -> str:
     """Word the answer without a model.
 
     This is the keyless path, and it is also the fallback whenever the model is
     unavailable. The arithmetic lives here either way — a model outage degrades
     the prose, never the numbers.
-    """
-    if not figures and not passages:
-        return "No matching material was found in the corpus for that question."
 
+    When nothing good was found it says so, and says what it *could* answer
+    instead. A fluent irrelevance is worse than an honest dead end: it looks
+    like an answer, so nobody checks it.
+    """
     lines: list[str] = []
 
     by_metric = {row["metric"]: row for row in figures}
@@ -120,11 +127,44 @@ def _compose_deterministic(figures: list[dict], passages: list[dict],
         lines.append(f"{row['metric'].replace('_', ' ').capitalize()} for "
                      f"{row['period']}: {row['display']}.")
 
-    if passages and not figures:
-        excerpt = " ".join(passages[0]["text"].split())[:420]
-        lines.append(f"From the filings: {excerpt}...")
+    if figures:
+        return " ".join(lines)
 
-    return " ".join(lines)
+    # No figures matched. Decide whether the narrative hits are worth showing
+    # at all, rather than presenting the least-bad passage as an answer.
+    relevant = [p for p in passages if p.get("score", 0) >= MIN_RELEVANCE]
+
+    # A plan with topic tags means the question was ABOUT something this corpus
+    # covers — risk, governance, management commentary. Those are first-class
+    # questions answered from narrative, not failed metric lookups, so they
+    # must not be prefixed with an apology.
+    recognised_topic = bool(plan.tags)
+
+    if relevant and recognised_topic:
+        top = relevant[0]
+        excerpt = " ".join(top["text"].split())[:520]
+        return f"From the filings ({top['citation']}):\n\n{excerpt}…"
+
+    if relevant:
+        top = relevant[0]
+        excerpt = " ".join(top["text"].split())[:420]
+        return ("That does not match a reported figure or a section of these "
+                "filings, so this is only the closest passage found "
+                f"({top['citation']}). It may not answer the question:\n\n"
+                f"{excerpt}…")
+
+    message = ("I could not find anything in these filings that answers that "
+               "question.")
+    if suggestions:
+        message += (" These are SEC filings, so they report stated figures "
+                    "rather than derived measures such as market valuation. "
+                    "Metrics with similar names: " + ", ".join(suggestions) + ".")
+    else:
+        message += (" Try naming a reported figure — for example 'net sales', "
+                    "'gross margin' or 'operating income' — together with a "
+                    "fiscal year, or ask about risk factors, governance or "
+                    "management's discussion.")
+    return message
 
 
 def answer(question: str, gate: AccessGate,
@@ -180,7 +220,13 @@ def answer(question: str, gate: AccessGate,
     corrections = rerank.corrections_for(question, db_path=feedback_db) \
         if use_feedback else []
 
-    deterministic = _compose_deterministic(figures, passages, plan)
+    # Suggestions are for questions that named no metric AND no recognisable
+    # topic — a genuine dead end. Offering metric names for "what were the risk
+    # factors" would be noise, since that question is already answerable.
+    suggestions = planner.suggest_metrics(question) \
+        if not plan.metrics and not plan.tags else []
+
+    deterministic = _compose_deterministic(figures, passages, plan, suggestions)
     text, source = deterministic, "deterministic"
 
     if use_llm:
@@ -208,6 +254,7 @@ def answer(question: str, gate: AccessGate,
         "figures": figures,
         "passages": passages,
         "corrections_applied": corrections,
+        "suggested_metrics": suggestions,
         "reranked_by_feedback": search.get("reranked_by_feedback", False),
         "denied_tags": [],
         "denied_periods": [],

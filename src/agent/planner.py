@@ -75,6 +75,30 @@ class Planner:
                 text = text.replace(alias, " ")
         return tuple(found)
 
+    def suggest_metrics(self, question: str, limit: int = 6) -> list[str]:
+        """Stored metric names closest to the words in the question.
+
+        Used when nothing matched, so the system can say "I don't hold that,
+        here is what I do hold" instead of silently falling back to a weak
+        narrative search. Scored by token overlap — no dependency, and good
+        enough to turn a dead end into a next step.
+        """
+        words = {w for w in re.findall(r"[a-z]+", question.lower())
+                 if len(w) > 3}
+        if not words:
+            return []
+
+        scored: list[tuple[int, str]] = []
+        for metric in self.metric_tags:
+            parts = set(metric.split("_"))
+            overlap = len(words & parts)
+            if overlap:
+                # Shorter names first at equal overlap: `net_sales` is a more
+                # useful suggestion than `products_net_sales_deferred_revenue`.
+                scored.append((-overlap * 100 + len(metric), metric))
+        scored.sort()
+        return [metric for _, metric in scored[:limit]]
+
     def find_periods(self, question: str) -> tuple[str, ...]:
         """Extract periods, defaulting to the newest year in the corpus.
 

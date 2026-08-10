@@ -191,6 +191,66 @@ def test_analyst_refused_an_out_of_window_year(tmp_path):
     assert "FY2023" in result["denied_periods"]
 
 
+# -- honest failure -------------------------------------------------------
+
+def ask_ceo(question: str) -> dict:
+    return answer(question, gate("CEO"), understanding_dir=UND,
+                  use_llm=False, use_feedback=False)
+
+
+def test_an_unanswerable_question_says_so():
+    """Found by using the console: "what was evaluation of company in FY2024"
+    returned generic risk-factor prose presented as an answer. A fluent
+    irrelevance is worse than an honest dead end — it reads like an answer, so
+    nobody checks whether it was one."""
+    result = ask_ceo("what was the market valuation of the company")
+
+    assert result["allowed"] is True
+    lowered = result["answer"].lower()
+    assert "does not match" in lowered or "could not find" in lowered
+
+
+def test_nonsense_gets_guidance_not_a_passage():
+    result = ask_ceo("asdkjfh qwerty zzz")
+
+    assert "could not find anything" in result["answer"].lower()
+    # A dead end should tell the user what WOULD work.
+    assert "net sales" in result["answer"].lower()
+
+
+def test_a_legitimate_narrative_question_is_not_treated_as_a_failure():
+    """Narrative questions are first-class here, not failed metric lookups.
+    An earlier version prefixed them with "no reported figure matched", which
+    made a correct answer read like an apology."""
+    result = ask_ceo("what were the main risk factors")
+
+    assert result["allowed"] is True
+    assert result["answer"].startswith("From the filings")
+    assert "could not find" not in result["answer"].lower()
+    assert "does not match" not in result["answer"].lower()
+
+
+def test_a_metric_question_still_answers_exactly():
+    """The control. Fixing vague questions must not touch the precise ones."""
+    result = ask_ceo("what was net sales in FY2024")
+
+    assert "391,035" in result["answer"]
+    assert "could not find" not in result["answer"].lower()
+
+
+def test_weak_matches_are_not_presented_as_answers():
+    """Below the relevance floor, nothing is shown at all."""
+    from src.agent.loop import MIN_RELEVANCE, _compose_deterministic
+    from src.access.guard import QueryPlan
+
+    plan = QueryPlan(intent="narrative", metrics=(), periods=("FY2025",),
+                     tags=())
+    weak = [{"text": "irrelevant text", "citation": "x p.1",
+             "score": MIN_RELEVANCE - 1}]
+
+    assert "could not find" in _compose_deterministic([], weak, plan).lower()
+
+
 def test_the_plan_is_returned_for_inspection(tmp_path):
     """The plan is what the guard judged, so it is shown alongside the answer.
     An access decision nobody can inspect is not auditable."""
