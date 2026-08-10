@@ -14,3 +14,7 @@ data/feedback.db
 
 # Reference material unrelated to this submission.
 AI-Collaboration-Field-Guide.pdf
+
+# The assignment brief itself. Azentio wrote it; it does not belong in the
+# repository being submitted back to them.
+AI_Agent_Dev_Assignment.pdf
