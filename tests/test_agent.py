@@ -191,6 +191,88 @@ def test_analyst_refused_an_out_of_window_year(tmp_path):
     assert "FY2023" in result["denied_periods"]
 
 
+# -- trends and comparisons ----------------------------------------------
+
+def test_a_comparison_question_returns_several_years(planner):
+    """"How did revenue change?" answered with one number is not an answer to
+    the question that was asked."""
+    plan = planner.plan("How did revenue change over the years?")
+    assert len(plan.periods) == 3
+    assert plan.metrics == ("net_sales",)
+
+
+def test_an_explicit_range_is_respected(planner):
+    plan = planner.plan("Compare net sales in FY2023 and FY2025")
+    assert set(plan.periods) == {"FY2023", "FY2025"}
+
+
+def test_a_plain_question_still_gets_one_period(planner):
+    """Comparison handling must not turn every question into a trend."""
+    assert planner.plan("What was net sales in FY2025?").periods == ("FY2025",)
+
+
+def test_a_trend_answer_computes_the_change():
+    result = answer("How did revenue change over the years?", gate("CEO"),
+                    understanding_dir=UND, use_llm=False, use_feedback=False)
+
+    assert "FY2023" in result["answer"] and "FY2025" in result["answer"]
+    assert "%" in result["answer"]
+    assert "up" in result["answer"] or "down" in result["answer"]
+
+
+def test_access_still_applies_across_every_period_of_a_trend():
+    """A multi-period question must not become a way around the time window."""
+    result = answer("How did revenue change over the years?", gate("ANALYST"),
+                    understanding_dir=UND, use_llm=False, use_feedback=False)
+
+    assert result["allowed"] is False
+    assert "FY2023" in result["denied_periods"]
+
+
+def test_a_restricted_trend_is_refused():
+    result = answer("How did headcount change over the years?", gate("CTO"),
+                    understanding_dir=UND, use_llm=False, use_feedback=False)
+
+    assert result["allowed"] is False
+    assert "hr.headcount" in result["denied_tags"]
+
+
+# -- readable labels ------------------------------------------------------
+
+def test_metrics_are_shown_with_human_names():
+    """Internal names encode where a figure sits in the filing.
+    `operating_expenses_research_and_development` is precise and unreadable."""
+    result = answer("How much did research and development cost in FY2025?",
+                    gate("CEO"), understanding_dir=UND, use_llm=False,
+                    use_feedback=False)
+
+    assert "Research and development" in result["answer"]
+    assert "operating_expenses" not in result["answer"]
+
+
+def test_units_are_not_assumed_to_be_millions():
+    """A workbook mixes units. Earnings per share rendered as "$6 million"
+    instead of "$6.08 per share" is a wrong answer, not a formatting nit."""
+    result = answer("What was diluted earnings per share in FY2024?",
+                    gate("CEO"), understanding_dir=UND, use_llm=False,
+                    use_feedback=False)
+
+    assert "6.08" in result["answer"]
+    assert "per share" in result["answer"]
+    assert "million" not in result["answer"]
+
+
+def test_expenses_are_reported_positive():
+    """The unscoped `research_and_development` metric comes from a segment
+    reconciliation table where the figure is a deduction, so aliasing to it
+    reported R&D as -$34,550 million."""
+    result = answer("research and development in FY2025", gate("CEO"),
+                    understanding_dir=UND, use_llm=False, use_feedback=False)
+
+    assert "34,550" in result["answer"]
+    assert "-34,550" not in result["answer"]
+
+
 # -- honest failure -------------------------------------------------------
 
 def ask_ceo(question: str) -> dict:

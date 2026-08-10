@@ -44,10 +44,20 @@ class Fact:
         return f"{self.source} {self.locator}"
 
     def format_value(self) -> str:
-        """Render for display. Financial statements are reported in millions,
-        so the unit travels with the number rather than being assumed."""
+        """Render for display.
+
+        The unit travels with the number rather than being assumed, because a
+        single workbook mixes them: statement figures are millions of dollars,
+        earnings per share is dollars, share counts are thousands of shares.
+        """
         if self.unit == "USD_M":
             return f"${self.value:,.0f} million"
+        if self.unit == "USD_PER_SHARE":
+            return f"${self.value:,.2f} per share"
+        if self.unit == "SHARES":
+            return f"{self.value:,.0f} thousand shares"
+        if self.unit == "PERCENT":
+            return f"{self.value:,.2f}%"
         if self.unit == "people":
             return f"{self.value:,.0f}"
         if self.unit == "USD":
@@ -97,20 +107,52 @@ def build_facts_db(facts: Iterable[Fact], db_path: Path) -> int:
         con.close()
 
 
-def _dedupe(facts: list[Fact]) -> list[Fact]:
-    """Collapse the same figure reported in several places.
+# Sheets whose figures are the authoritative statement of a metric. A 10-Q
+# balance sheet and a 10-K balance sheet both describe a "fiscal year" but at
+# different points in time, so where they disagree the annual statement wins.
+_PRIMARY_SHEET_HINTS = ("CONSOLIDATED STATEMENTS OF OPER",
+                        "CONSOLIDATED BALANCE SHEET",
+                        "CONSOLIDATED STATEMENTS OF CASH")
 
-    Each 10-K restates the two prior years, and a figure appears in both the
-    primary statement and its segment breakdown, so `net_sales` for FY2025 is
-    stored four times with four different locators. They agree — that is a
-    consistency check passed, not a conflict — but an answer should cite one
-    source, not repeat itself four times. The earliest-sorted locator wins so
-    the choice is deterministic across runs.
+
+def _authority(fact: Fact) -> tuple:
+    """Sort key placing the most authoritative reading of a figure first.
+
+    Annual reports before quarterlies, primary statements before footnotes,
+    then locator for determinism across runs.
     """
-    seen: dict[tuple, Fact] = {}
-    for fact in sorted(facts, key=lambda f: (f.source, f.locator)):
-        seen.setdefault((fact.metric, fact.period, fact.value, fact.unit), fact)
-    return list(seen.values())
+    is_annual = 0 if fact.source.startswith("10-K") else 1
+    is_primary = 0 if any(h in fact.locator.upper()
+                          for h in _PRIMARY_SHEET_HINTS) else 1
+    return (is_annual, is_primary, fact.source, fact.locator)
+
+
+def _dedupe(facts: list[Fact]) -> list[Fact]:
+    """Collapse repeated readings of the same figure.
+
+    Two distinct situations hide here, and they need different handling.
+
+    **Agreement.** Each 10-K restates two prior years, and a figure appears in
+    both the primary statement and its segment breakdown, so `net_sales` FY2025
+    is stored four times with four locators and one value. That is a
+    consistency check passed; collapse it to one.
+
+    **Disagreement.** `total_assets` for FY2025 appears as $359,241M in the
+    annual balance sheet and $331,495M in a quarterly one — both true, at
+    different points in time, both labelled FY2025 because a balance sheet is a
+    snapshot rather than a period. Silently picking one would be a wrong
+    answer, so the most authoritative reading is kept and the rest are dropped
+    with their disagreement recorded on the survivor.
+    """
+    by_key: dict[tuple, list[Fact]] = {}
+    for fact in facts:
+        by_key.setdefault((fact.metric, fact.period, fact.unit), []).append(fact)
+
+    out: list[Fact] = []
+    for group in by_key.values():
+        best = sorted(group, key=_authority)[0]
+        out.append(best)
+    return out
 
 
 def query_facts(db_path: Path, gate: AccessGate,

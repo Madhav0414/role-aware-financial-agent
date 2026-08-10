@@ -1200,3 +1200,129 @@ when the question named neither a metric nor a topic — offering metric names f
 
 **REJECTED** — Always attaching suggestions. It made good answers look
 uncertain, which costs more than the help is worth.
+
+---
+
+## Part 15 — Coverage and readability
+
+### D69 · The alias map decides what the system can actually be asked ⭐
+
+**WHY** — Measured rather than assumed, and the result was uncomfortable:
+**561 metrics were stored and only 11 were reachable in plain English.**
+Geographic revenue, the whole balance sheet, earnings per share — all present
+in `facts.db`, none askable without typing an internal name.
+
+The ingestion was never the bottleneck. The vocabulary was.
+
+**HOW** — The alias map now covers the income statement, balance sheet, cash
+flow, product lines and geography — around 30 metrics behind roughly 90
+phrasings. Matching is **word-bounded**, so a short alias like `eps` cannot
+fire inside "steps".
+
+**REJECTED** — Fuzzy-matching every stored metric name. It would surface
+`non_trade_receivables_credit_concentration_risk_vendor_one_...` for casual
+questions and make the system feel broken rather than broad.
+
+---
+
+### D70 · A dead alias is worse than a missing one
+
+**WHY** — `total_net_sales` was aliased and does not exist in `facts.db`. The
+planner would declare it, the guard would approve it, and the query would
+return nothing — so the question looked answerable and came back empty. A
+missing alias at least fails honestly.
+
+**HOW** — Removed, and the alias list is checked against the built database.
+Every metric named in `config/sources.yaml` now exists.
+
+**REJECTED** — Leaving it in case the metric appeared later. Silent emptiness
+is the worst failure mode this system has.
+
+---
+
+### D71 · Units are inferred, never assumed
+
+**WHY** — Diluted earnings per share rendered as **"$6 million"**. A workbook
+mixes units freely — statement figures in millions, per-share amounts in
+dollars, share counts in thousands, rates in percent — and defaulting
+everything to millions turns $6.08 per share into a wrong answer, not a
+formatting nit.
+
+**HOW** — `infer_unit()` reads the unit from the metric name, because XBRL
+renderings encode it there: `_in_dollars_per_share`, `_in_shares`,
+`_percentage`. `format_value()` renders each accordingly.
+
+**REJECTED** — Parsing the "$ in Millions" hint from each sheet header. It is
+per-sheet, and the mixed units occur *within* a sheet.
+
+---
+
+### D72 · Aliases point at the income statement, not the segment reconciliation
+
+**WHY** — R&D came back as **-$34,550 million**. Both `research_and_development`
+and `operating_expenses_research_and_development` exist: the first comes from a
+segment reconciliation table where the figure is a *deduction* and therefore
+negative; the second is the income statement row, which category scoping
+renamed.
+
+The sign was not a parsing bug. Two legitimate figures share a name, and the
+alias pointed at the wrong one.
+
+**HOW** — Aliases point at the `operating_expenses_*` names, with the reason
+written beside them so nobody "simplifies" it back.
+
+**REJECTED** — Taking the absolute value. It would have hidden a real
+distinction and produced a plausible number from the wrong table.
+
+---
+
+### D73 · Disagreeing readings resolve by authority, not by arbitrary choice
+
+**WHY** — `total_assets` for FY2025 returned **two** values: $359,241M and
+$331,495M. Both true. A balance sheet is a *snapshot*, not a period, so a
+quarterly balance sheet and an annual one both label their figures with a
+fiscal year and legitimately disagree.
+
+**HOW** — `_authority()` ranks annual reports above quarterlies and primary
+statements above footnotes, then locator for determinism. The most
+authoritative reading survives.
+
+**REJECTED** — Showing every value. Honest, and it makes a simple question
+produce a confusing answer. The disagreement is a property of financial
+reporting, not an error to surface on every query.
+
+---
+
+### D74 · A comparison question gets a computed change
+
+**WHY** — "How did revenue change over the years?" answered with a single
+figure is not an answer to the question that was asked, and three bare figures
+leave the reader doing the arithmetic the question was asking for.
+
+**HOW** — Comparison cues in config (`change`, `growth`, `trend`, `versus`,
+`year over year`…) widen the plan to the three most recent annual periods when
+no years are named. The composer orders them chronologically and computes the
+percentage change: *"Net sales: $383,285M in FY2023, $391,035M in FY2024,
+$416,161M in FY2025. That is up 8.6% from FY2023 to FY2025."*
+
+Access still applies across every period — ANALYST asking for a revenue trend
+is refused naming **both** out-of-window years, so a multi-period question is
+not a way around the time window. There is a test for exactly that.
+
+**REJECTED** — Always returning several years. It would turn every precise
+question into a report.
+
+---
+
+### D75 · Metrics are labelled for humans
+
+**WHY** — `operating_expenses_research_and_development` is precise and
+unreadable, and `earnings_per_share_diluted_in_dollars_per_share for FY2024:
+$6.08 per share` reads like a database dump.
+
+**HOW** — A display-name map in config for the metrics people actually ask
+about, and a generic prettifier for the rest that strips unit suffixes rather
+than showing them raw.
+
+**REJECTED** — Renaming the metrics themselves. The internal name records where
+a figure sits in the filing, which is what makes the locator meaningful.

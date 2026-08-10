@@ -33,6 +33,63 @@ CONFIG = Path("config/sources.yaml")
 # unhelpful — it reads like an answer, so nobody checks whether it was one.
 MIN_RELEVANCE = 6.0
 
+_DISPLAY_NAMES: dict[str, str] = {}
+
+
+def _load_display_names(config_path: Path = CONFIG) -> dict[str, str]:
+    global _DISPLAY_NAMES
+    if not _DISPLAY_NAMES:
+        _DISPLAY_NAMES = load_config(config_path).get("metric_display_names", {})
+    return _DISPLAY_NAMES
+
+
+def _label(metric: str) -> str:
+    """Human-readable name for a metric.
+
+    Internal names encode where a figure sits in the filing —
+    `operating_expenses_research_and_development` is precise and unreadable.
+    Anything without an explicit name is prettified generically rather than
+    shown raw.
+    """
+    names = _load_display_names()
+    if metric in names:
+        return names[metric]
+    return metric.replace("_in_dollars_per_share", "") \
+                 .replace("_in_shares", "") \
+                 .replace("_", " ").strip().capitalize()
+
+
+def _sort_periods(periods: list[str]) -> list[str]:
+    """Chronological order. 'Q3FY2026' sorts after 'Q1FY2026' after 'FY2025'."""
+    def key(label: str) -> tuple[int, int]:
+        year = int(label[-4:])
+        quarter = int(label[1]) if label.startswith("Q") else 0
+        return (year, quarter)
+    return sorted(periods, key=key)
+
+
+def _compose_trend(figures: list[dict]) -> str:
+    """Report one metric across several periods, with the change computed.
+
+    A trend question is asking about the *movement*, so three bare figures
+    would leave the reader doing the arithmetic themselves.
+    """
+    metric = figures[0]["metric"]
+    by_period = {row["period"]: row for row in figures}
+    ordered = _sort_periods(list(by_period))
+
+    parts = [f"{by_period[p]['display']} in {p}" for p in ordered]
+    sentence = f"{_label(metric)}: " + ", ".join(parts) + "."
+
+    first, last = by_period[ordered[0]], by_period[ordered[-1]]
+    if first["value"]:
+        delta = last["value"] - first["value"]
+        pct = delta / abs(first["value"]) * 100
+        direction = "up" if delta > 0 else "down" if delta < 0 else "flat"
+        sentence += (f" That is {direction} {abs(pct):,.1f}% from "
+                     f"{ordered[0]} to {ordered[-1]}.")
+    return sentence
+
 SYSTEM_PROMPT = """\
 You are a financial analyst assistant answering from Apple's public SEC filings.
 
@@ -119,13 +176,20 @@ def _compose_deterministic(figures: list[dict], passages: list[dict],
         if second["value"]:
             ratio = first["value"] / second["value"]
             lines.append(
-                f"For {first['period']}, {names[0].replace('_', ' ')} was "
-                f"{first['display']} and {names[1].replace('_', ' ')} was "
+                f"For {first['period']}, {_label(names[0])} was "
+                f"{first['display']} and {_label(names[1])} was "
                 f"{second['display']}, a ratio of {ratio:,.2f}.")
+        return " ".join(lines)
+
+    # One metric across several periods is a trend question. Reporting three
+    # bare figures leaves the reader to do the arithmetic the question was
+    # actually asking for.
+    if len(by_metric) == 1 and len({row["period"] for row in figures}) > 1:
+        return _compose_trend(figures)
 
     for row in figures:
-        lines.append(f"{row['metric'].replace('_', ' ').capitalize()} for "
-                     f"{row['period']}: {row['display']}.")
+        lines.append(f"{_label(row['metric'])} for {row['period']}: "
+                     f"{row['display']}.")
 
     if figures:
         return " ".join(lines)

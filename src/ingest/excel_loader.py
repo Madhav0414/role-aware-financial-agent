@@ -182,6 +182,30 @@ def _period_columns(df: pd.DataFrame) -> tuple[dict[int, Period], int]:
     return periods, last_header_row + 1
 
 
+# Statement figures are reported in millions, but a workbook mixes units freely:
+# earnings per share is dollars, share counts are thousands, rates are percents.
+# Assuming millions everywhere renders "$6.08 per share" as "$6 million".
+#
+# The unit is inferred from the metric name because XBRL renderings encode it
+# there — "..._in_dollars_per_share", "..._in_shares", "..._percentage".
+_UNIT_HINTS: tuple[tuple[str, str], ...] = (
+    ("_in_dollars_per_share", "USD_PER_SHARE"),
+    ("per_share", "USD_PER_SHARE"),
+    ("_in_shares", "SHARES"),
+    ("shares_outstanding", "SHARES"),
+    ("percentage", "PERCENT"),
+    ("_rate", "PERCENT"),
+)
+
+
+def infer_unit(metric: str) -> str:
+    """Unit for a metric, defaulting to millions of USD."""
+    for suffix, unit in _UNIT_HINTS:
+        if suffix in metric:
+            return unit
+    return "USD_M"
+
+
 def _normalise_metric(label: str) -> str:
     """'Net sales' -> 'net_sales'. Stable keys matter more than pretty ones:
     the planner looks metrics up by this name."""
@@ -259,7 +283,7 @@ def load_statement_workbook(path: Path) -> list[Fact]:
                 if value is None:
                     continue
                 facts.append(Fact(
-                    metric=metric, value=value, unit="USD_M",
+                    metric=metric, value=value, unit=infer_unit(metric),
                     period=period.label, fiscal_year=period.fiscal_year,
                     source=path.name,
                     locator=f"{sheet_name}!R{row + 1}C{col + 1}",

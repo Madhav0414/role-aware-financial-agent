@@ -109,21 +109,135 @@ document_defaults:
 
 # How the planner maps everyday words onto stored metric names. Extending this
 # is how the system learns new vocabulary without touching code.
+#
+# Aliases are matched longest-first and consumed as they match, so
+# "services revenue" wins over the bare "revenue". Matching is word-bounded,
+# so a short alias like "eps" cannot fire inside "steps".
+#
+# Every metric named here must exist in facts.db. A dead alias is worse than a
+# missing one: it makes the planner declare a metric that returns nothing, so
+# the question looks answerable and comes back empty.
+
 metric_aliases:
-  net_sales: ["net sales", "revenue", "revenues", "sales", "turnover", "top line"]
+  # --- income statement ---
+  net_sales: ["net sales", "revenue", "revenues", "sales", "turnover",
+              "top line"]
+  cost_of_sales: ["cost of sales", "cost of goods sold", "cogs"]
   gross_margin: ["gross margin", "gross profit"]
+  total_operating_expenses: ["total operating expenses", "operating expenses",
+                             "opex"]
+  # These point at the INCOME STATEMENT rows, which category scoping named
+  # `operating_expenses_*`. The unscoped `research_and_development` exists too,
+  # but it comes from a segment reconciliation table where the figure is a
+  # deduction and therefore negative — aliasing to it reported R&D as
+  # -$34,550 million.
+  operating_expenses_research_and_development:
+    ["research and development", "r&d", "rnd", "research spend"]
+  operating_expenses_selling_general_and_administrative:
+    ["selling general and administrative", "sg&a", "sga",
+     "selling and administrative"]
   operating_income: ["operating income", "operating profit"]
+  income_before_provision_for_income_taxes:
+    ["income before taxes", "pre-tax income", "pretax income"]
+  provision_for_income_taxes: ["provision for income taxes", "income taxes",
+                               "income tax", "tax provision"]
   net_income: ["net income", "profit", "earnings", "bottom line"]
-  research_and_development: ["research and development", "r&d", "rnd"]
-  total_net_sales: ["total net sales"]
-  iphone_net_sales: ["iphone revenue", "iphone sales", "iphone net sales"]
-  services_net_sales: ["services revenue", "services sales", "services net sales"]
+  earnings_per_share_basic_in_dollars_per_share:
+    ["basic earnings per share", "basic eps"]
+  earnings_per_share_diluted_in_dollars_per_share:
+    ["diluted earnings per share", "diluted eps", "earnings per share", "eps"]
+
+  # --- balance sheet ---
+  total_assets: ["total assets", "assets"]
+  total_liabilities: ["total liabilities", "liabilities"]
+  cash_and_cash_equivalents: ["cash and cash equivalents", "cash balance",
+                              "cash on hand"]
+
+  # --- cash flow ---
+  financing_activities_repurchases_of_common_stock:
+    ["share repurchases", "share buybacks", "buybacks", "stock repurchases"]
+  financing_activities_payments_for_dividends_and_dividend_equivalents:
+    ["dividends", "dividend payments"]
+
+  # --- product lines ---
+  products_net_sales: ["products revenue", "product sales", "products net sales"]
+  iphone_net_sales: ["iphone revenue", "iphone sales", "iphone net sales",
+                     "iphone"]
   mac_net_sales: ["mac revenue", "mac sales"]
-  ipad_net_sales: ["ipad revenue", "ipad sales"]
+  ipad_net_sales: ["ipad revenue", "ipad sales", "ipad"]
+  wearables_home_and_accessories_net_sales:
+    ["wearables", "wearables home and accessories", "accessories revenue"]
+  services_net_sales: ["services revenue", "services sales",
+                       "services net sales"]
+
+  # --- geography ---
+  # The longer combined phrases are listed explicitly. Without them, matching
+  # "greater china" leaves the word "revenue" in the question, which then
+  # matches net_sales — so one question produced two metrics and the answer
+  # reported a ratio nobody asked for.
+  americas_net_sales: ["americas net sales", "americas revenue", "americas sales",
+                       "americas", "america"]
+  europe_net_sales: ["europe net sales", "europe revenue", "europe sales",
+                     "european revenue", "europe"]
+  greater_china_net_sales: ["greater china net sales", "greater china revenue",
+                            "greater china sales", "china net sales",
+                            "china revenue", "china sales", "greater china",
+                            "china"]
+  japan_net_sales: ["japan net sales", "japan revenue", "japan sales", "japan"]
+  rest_of_asia_pacific_net_sales: ["rest of asia pacific net sales",
+                                   "rest of asia pacific", "asia pacific",
+                                   "asia"]
+
+  # --- people (restricted) ---
   # "employee" singular is listed because "revenue per employee" — the exact
   # phrase the derivation demo turns on — does not contain the plural.
   headcount: ["headcount", "head count", "employee", "employees",
               "employee count", "staff", "workforce", "how many people"]
+
+# How metrics are named to a human. Internal names encode where a figure sits
+# in the filing — `operating_expenses_research_and_development` is precise and
+# unreadable. Anything not listed here is prettified generically.
+metric_display_names:
+  net_sales: "Net sales"
+  cost_of_sales: "Cost of sales"
+  gross_margin: "Gross margin"
+  total_operating_expenses: "Total operating expenses"
+  operating_expenses_research_and_development: "Research and development"
+  operating_expenses_selling_general_and_administrative:
+    "Selling, general and administrative"
+  operating_income: "Operating income"
+  income_before_provision_for_income_taxes: "Income before income taxes"
+  provision_for_income_taxes: "Provision for income taxes"
+  net_income: "Net income"
+  earnings_per_share_basic_in_dollars_per_share: "Basic earnings per share"
+  earnings_per_share_diluted_in_dollars_per_share: "Diluted earnings per share"
+  total_assets: "Total assets"
+  total_liabilities: "Total liabilities"
+  cash_and_cash_equivalents: "Cash and cash equivalents"
+  financing_activities_repurchases_of_common_stock: "Share repurchases"
+  financing_activities_payments_for_dividends_and_dividend_equivalents:
+    "Dividends paid"
+  products_net_sales: "Products net sales"
+  iphone_net_sales: "iPhone net sales"
+  mac_net_sales: "Mac net sales"
+  ipad_net_sales: "iPad net sales"
+  wearables_home_and_accessories_net_sales: "Wearables, Home and Accessories"
+  services_net_sales: "Services net sales"
+  americas_net_sales: "Americas net sales"
+  europe_net_sales: "Europe net sales"
+  greater_china_net_sales: "Greater China net sales"
+  japan_net_sales: "Japan net sales"
+  rest_of_asia_pacific_net_sales: "Rest of Asia Pacific net sales"
+  headcount: "Headcount"
+
+# Words that mean the user wants a COMPARISON rather than a single figure.
+# A question carrying one of these gets every fiscal year it named, or the
+# three most recent if it named none.
+comparison_cues: ["change", "changed", "growth", "grew", "grow", "increase",
+                  "increased", "decrease", "decreased", "decline", "trend",
+                  "compare", "compared", "comparison", "versus", " vs ",
+                  "over the years", "year over year", "yoy", "since",
+                  "between", "history", "historical"]
 
 # What a QUESTION is about, used to declare a plan's tags before any data is
 # touched. The guard cannot check what was not declared, so this mapping lives

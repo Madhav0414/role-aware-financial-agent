@@ -62,17 +62,24 @@ class Planner:
     def find_metrics(self, question: str) -> tuple[str, ...]:
         """Match question wording onto stored metric names.
 
-        Matched aliases are blanked out as they are consumed, so "services
-        revenue" cannot also match the bare "revenue" alias afterwards and
-        produce two metrics where the user asked for one.
+        Two rules make this safe:
+
+        - **Word boundaries.** A substring match would let the alias "eps" fire
+          on "steps" and "r&d" on unrelated punctuation. Short aliases are the
+          useful ones, so they have to be matched precisely.
+        - **Consumption.** A matched alias is blanked out, so "services
+          revenue" cannot also match the bare "revenue" alias afterwards and
+          produce two metrics where the user asked for one. Aliases are tried
+          longest-first for the same reason.
         """
         text = f" {question.lower()} "
         found: list[str] = []
         for alias, metric in self.aliases:
-            if alias in text and metric not in found:
+            pattern = re.compile(rf"(?<!\w){re.escape(alias)}(?!\w)")
+            if pattern.search(text) and metric not in found:
                 if metric in self.metric_tags:
                     found.append(metric)
-                text = text.replace(alias, " ")
+                text = pattern.sub(" ", text)
         return tuple(found)
 
     def suggest_metrics(self, question: str, limit: int = 6) -> list[str]:
@@ -99,11 +106,20 @@ class Planner:
         scored.sort()
         return [metric for _, metric in scored[:limit]]
 
+    def wants_comparison(self, question: str) -> bool:
+        """Does the question ask how something CHANGED rather than what it was?"""
+        text = f" {question.lower()} "
+        return any(cue in text for cue in self.cfg.get("comparison_cues", []))
+
     def find_periods(self, question: str) -> tuple[str, ...]:
         """Extract periods, defaulting to the newest year in the corpus.
 
         Defaulting to the corpus rather than to today's date keeps behaviour
         stable as the calendar moves.
+
+        A comparison question that names no years gets the three most recent
+        annual periods — asking "how has revenue grown?" and receiving one
+        number is not an answer to the question that was asked.
         """
         periods = []
         for quarter, year in _EXPLICIT_PERIOD.findall(question):
@@ -111,7 +127,18 @@ class Planner:
                 else f"FY{year}"
             if label not in periods:
                 periods.append(label)
-        return tuple(periods) or (f"FY{self.corpus_max_fy}",)
+
+        if periods:
+            return tuple(periods)
+
+        if self.wants_comparison(question):
+            # The newest annual period in the corpus may be a partial year
+            # covered only by quarterlies, so step back from the newest year
+            # that actually carries annual figures.
+            newest = self.corpus_max_fy - 1
+            return tuple(f"FY{newest - offset}" for offset in range(3))
+
+        return (f"FY{self.corpus_max_fy}",)
 
     def find_topic_tags(self, question: str) -> tuple[Tag, ...]:
         """Tags implied by what the question is *about*.
