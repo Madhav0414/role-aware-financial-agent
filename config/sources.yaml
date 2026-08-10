@@ -1,0 +1,105 @@
+# How raw documents become tagged, retrievable chunks.
+#
+# Tagging is DECLARATIVE and deterministic. It never calls a model: an access
+# decision that depends on an LLM's classification is not an access control,
+# it is a suggestion. Everything the gate enforces traces back to this file.
+
+# Section headings, matched case-insensitively as substrings against a
+# whitespace-normalised heading line. Order matters — the first match wins, so
+# the most specific patterns come first.
+#
+# Whitespace is normalised before matching because PDF extraction introduces
+# layout artifacts: Apple's 10-K says "full-time equivalent employees", and the
+# extracted text splits the hyphen as "full- time".
+section_tags:
+  # --- restricted: people data ---
+  - match: "summary compensation table"
+    tag: hr.compensation
+  - match: "compensation discussion and analysis"
+    tag: hr.compensation
+  - match: "executive compensation"
+    tag: hr.compensation
+  - match: "pay versus performance"
+    tag: hr.compensation
+  - match: "director compensation"
+    tag: hr.compensation
+  - match: "potential payments upon termination"
+    tag: hr.compensation
+  - match: "grants of plan-based awards"
+    tag: hr.compensation
+  - match: "outstanding equity awards"
+    tag: hr.compensation
+  - match: "human capital"
+    tag: hr.headcount
+  # NOTE: a bare "employees" rule was removed. A wrapped sentence ending in
+  # "employees." is short and scores 0.9 on the match-ratio test, so it was
+  # promoted to a heading and tagged pages of executive compensation prose as
+  # headcount data. "Human capital" is the section Apple actually uses, and the
+  # employee count lives inside it.
+
+  # --- narrative ---
+  - match: "risk factors"
+    tag: narrative.risk
+  - match: "legal proceedings"
+    tag: narrative.risk
+  - match: "quantitative and qualitative disclosures about market risk"
+    tag: narrative.risk
+  - match: "management's discussion and analysis"
+    tag: narrative.mdna
+  - match: "managements discussion and analysis"
+    tag: narrative.mdna
+
+  # --- governance ---
+  - match: "corporate governance"
+    tag: governance
+  - match: "board of directors"
+    tag: governance
+  - match: "audit committee"
+    tag: governance
+  - match: "proposal no"
+    tag: governance
+
+  # --- financial ---
+  - match: "segment information"
+    tag: financials.segment
+  - match: "segment operating performance"
+    tag: financials.segment
+  - match: "products and services performance"
+    tag: financials.segment
+  - match: "financial statements"
+    tag: financials.statements
+  - match: "notes to consolidated financial statements"
+    tag: financials.statements
+
+# Where a document's content falls before any heading has been seen, and where
+# unmatched content lands. Keyed by a substring of the filename.
+document_defaults:
+  - match: "DEF14A"
+    tag: governance
+  - match: "10-K"
+    tag: narrative.mdna
+  - match: "10-Q"
+    tag: narrative.mdna
+
+# How the planner maps everyday words onto stored metric names. Extending this
+# is how the system learns new vocabulary without touching code.
+metric_aliases:
+  net_sales: ["net sales", "revenue", "revenues", "sales", "turnover", "top line"]
+  gross_margin: ["gross margin", "gross profit"]
+  operating_income: ["operating income", "operating profit"]
+  net_income: ["net income", "profit", "earnings", "bottom line"]
+  research_and_development: ["research and development", "r&d", "rnd"]
+  total_net_sales: ["total net sales"]
+  iphone_net_sales: ["iphone revenue", "iphone sales", "iphone net sales"]
+  services_net_sales: ["services revenue", "services sales", "services net sales"]
+  mac_net_sales: ["mac revenue", "mac sales"]
+  ipad_net_sales: ["ipad revenue", "ipad sales"]
+  headcount: ["headcount", "employees", "employee count", "staff", "workforce",
+              "how many people"]
+
+# Chunking. 1,800 characters is roughly a page of narrative prose — large
+# enough to keep an argument intact, small enough that a retrieved chunk is
+# mostly relevant.
+chunking:
+  max_chars: 1800
+  min_chars: 120

@@ -633,3 +633,96 @@ the first thing to do with more of it.
 
 **REJECTED** — Hand-curating an alias map for the footnote metrics. It would
 paper over the 306 known cases and do nothing for the next filing.
+
+---
+
+## Part 8 — PDF ingestion and tagging
+
+### D38 · PyMuPDF for extraction
+
+**WHY** — It needs no system-level dependency, where pdfplumber's rendering
+path wants poppler installed. It is markedly faster across 467 pages. And its
+reading order preserves section headings as their own lines, which is exactly
+what the tagger depends on.
+
+**HOW** — `load_pdf` yields `(page_number, text)` with 1-based pages, because
+those numbers end up in citations a human reads. A page that fails to extract
+is logged and yielded empty rather than aborting the document.
+
+**REJECTED** — pdfplumber (system dependency, slower) and PyPDF2 (weaker text
+extraction, effectively unmaintained).
+
+---
+
+### D39 · Section state carries across pages
+
+**WHY** — A heading on page 8 governs prose that continues onto page 9.
+Resetting per page would leave most of every section untagged and therefore
+visible to roles that should not see it — the failure would be silent and would
+default *open*.
+
+**HOW** — The current tag persists across page boundaries until the next
+heading. A heading also closes the pending chunk, so text never straddles a
+section boundary: the gate makes one decision per chunk, and a chunk holding
+two sensitivities cannot be governed.
+
+**REJECTED** — Per-page tagging. Simpler, and it fails in the dangerous
+direction.
+
+---
+
+### D40 · A heading must look like a heading ⭐
+
+**WHY** — Found by reading the output, not by a failing test. Matching any
+short line containing a pattern promoted prose fragments to headings, and
+because a heading governs everything until the next one, a single false
+positive mis-tagged pages of governance prose as restricted HR data.
+`"appropriate, other employees"` became an `hr.headcount` section.
+
+**HOW** — Three structural tests before any pattern is considered: the line
+must not end mid-clause, must not contain a completed sentence, and the matched
+pattern must account for at least half the line. "Summary Compensation Table"
+scores 1.0; the fragment above scores 0.32. Numbered `Item 7.` headings bypass
+the ratio, since SEC filings number their sections and carry long titles.
+
+**REJECTED** — Requiring exact heading matches. Too brittle against extraction
+artifacts, where a heading can arrive with stray spacing or a trailing page
+number.
+
+---
+
+### D41 · The bare "employees" rule was deleted
+
+**WHY** — A wrapped sentence ending `"employees."` is ten characters, so the
+pattern accounted for 90% of the line and passed the ratio test. It became a
+heading in the middle of the proxy's compensation discussion and tagged pages
+of salary detail as `hr.headcount`.
+
+**HOW** — Removed. `"human capital"` is the heading Apple actually uses, and
+the employee count lives inside that section. After the change, `hr.headcount`
+holds 7 chunks — all from 10-Ks, all carrying the real figures 166,000 /
+164,000 / 161,000. A test asserts headcount chunks come only from annual
+reports.
+
+**REJECTED** — Raising the ratio threshold. It would have suppressed this case
+and broken legitimate short headings like "Human Capital" at 1.0.
+
+---
+
+### D42 · Known limitation: table-of-contents entries mis-tag
+
+**WHY RECORD IT** — A contents page lists "Executive Compensation" on a line of
+its own, which is structurally identical to the real heading. Those two proxy
+pages therefore carry section tags derived from the contents rather than the
+content.
+
+**IMPACT** — Small and in the safe direction: contents entries are tagged as
+the restricted section they name, so they are *over*-restricted rather than
+leaked. Real headings later in the document re-tag the body correctly.
+
+**HOW IT WOULD BE FIXED** — Detect contents pages by density (many heading-like
+lines and bare page numbers in close succession) and suppress heading updates
+while inside one.
+
+**REJECTED FOR NOW** — Not worth the remaining time when the failure mode
+restricts too much rather than too little.
