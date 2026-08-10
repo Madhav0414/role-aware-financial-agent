@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Financial Data Agent — Access Console</title>
+<style>
+/* ------------------------------------------------------------------
+   An instrument panel, not a chat window.
+
+   The design premise: in a system whose whole point is access control,
+   the ACCESS DECISION is the primary object — not the answer. So the
+   pipeline showing plan → guard → retrieve → compose → audit is given
+   the centre of the screen, and a refusal visibly stops partway along
+   it. You can see that nothing was fetched.
+   ------------------------------------------------------------------ */
+:root {
+  --bg:        #070b11;
+  --panel:     #0e151f;
+  --panel-2:   #121b28;
+  --line:      #1d2939;
+  --line-soft: #16202e;
+  --text:      #d5dfec;
+  --text-dim:  #8296ae;
+  --text-mute: #55677e;
+
+  --allow:  #2ee6a8;
+  --deny:   #ff5d73;
+  --warn:   #ffb020;
+  --info:   #57b6ff;
+  --idle:   #33445c;
+
+  --tag-fin:   #57b6ff;
+  --tag-narr:  #b98cff;
+  --tag-hr:    #ff5d73;
+  --tag-gov:   #ffb020;
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --r: 6px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Faint grid, so the surface reads as an instrument face rather than paper */
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: .35;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 40%, transparent 100%);
+}
+
+.shell { position: relative; z-index: 1; max-width: 1500px; margin: 0 auto; padding: 18px; }
+
+/* ---------- header ---------- */
+header {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding-bottom: 14px; border-bottom: 1px solid var(--line); margin-bottom: 18px;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+.brand .sub { font-family: var(--mono); font-size: 11px; color: var(--text-mute); }
+.stats { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
+.stat { font-family: var(--mono); font-size: 11px; color: var(--text-mute); }
+.stat b { color: var(--text-dim); font-weight: 600; }
+
+/* ---------- layout ---------- */
+.grid { display: grid; grid-template-columns: 268px 1fr; gap: 18px; align-items: start; }
+@media (max-width: 940px) { .grid { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.panel > h2 {
+  margin: 0; padding: 10px 14px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-mute);
+  border-bottom: 1px solid var(--line-soft);
+}
+.panel .body { padding: 14px; }
+
+/* ---------- roles ---------- */
+.role { width: 100%; text-align: left; cursor: pointer; display: block;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 10px 12px; margin-bottom: 8px;
+  color: var(--text); font-family: inherit; font-size: 13px;
+  transition: border-color .15s, background .15s; }
+.role:hover { border-color: var(--idle); }
+.role[aria-pressed="true"] { border-color: var(--allow); background: #0f2620; }
+.role:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.role .name { font-family: var(--mono); font-weight: 650; letter-spacing: .04em; }
+.role .meta { font-size: 11px; color: var(--text-mute); margin-top: 3px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.chip {
+  font-family: var(--mono); font-size: 10px; padding: 2px 7px;
+  border-radius: 999px; border: 1px solid currentColor; white-space: nowrap;
+}
+.chip.off { opacity: .34; text-decoration: line-through; }
+.t-fin  { color: var(--tag-fin); }
+.t-narr { color: var(--tag-narr); }
+.t-hr   { color: var(--tag-hr); }
+.t-gov  { color: var(--tag-gov); }
+
+/* ---------- ask ---------- */
+.ask { display: flex; gap: 9px; }
+.ask input {
+  flex: 1; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 11px 13px; color: var(--text);
+  font-family: inherit; font-size: 14px;
+}
+.ask input:focus { outline: none; border-color: var(--info); }
+.ask button {
+  background: var(--allow); color: #04120d; border: 0; border-radius: var(--r);
+  padding: 0 20px; font-weight: 650; font-size: 13px; cursor: pointer;
+}
+.ask button:disabled { opacity: .45; cursor: default; }
+
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.preset {
+  background: transparent; border: 1px dashed var(--line); color: var(--text-dim);
+  border-radius: 999px; padding: 4px 11px; font-size: 11.5px; cursor: pointer;
+  font-family: inherit;
+}
+.preset:hover { border-color: var(--info); color: var(--info); }
+
+/* ---------- pipeline: the centrepiece ---------- */
+.pipe { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; }
+@media (max-width: 720px) { .pipe { grid-template-columns: 1fr; } }
+
+.stage { position: relative; padding: 13px 14px; border-right: 1px solid var(--line-soft); }
+.stage:last-child { border-right: 0; }
+.stage .n {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+  color: var(--text-mute); text-transform: uppercase;
+}
+.stage .label { font-family: var(--mono); font-size: 12.5px; font-weight: 650; margin-top: 3px; }
+.stage .detail { font-size: 11px; color: var(--text-dim); margin-top: 5px;
+  font-family: var(--mono); word-break: break-word; }
+
+.stage .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--idle);
+  display: inline-block; margin-right: 7px; vertical-align: middle;
+}
+.stage[data-state="ok"]      .dot { background: var(--allow); box-shadow: 0 0 9px var(--allow); }
+.stage[data-state="blocked"] .dot { background: var(--deny);  box-shadow: 0 0 9px var(--deny); }
+.stage[data-state="skipped"] .dot { background: var(--idle); }
+.stage[data-state="ok"]      .label { color: var(--allow); }
+.stage[data-state="blocked"] .label { color: var(--deny); }
+.stage[data-state="skipped"] { opacity: .38; }
+.stage[data-state="skipped"] .label { color: var(--text-mute); }
+
+/* ---------- answer ---------- */
+.verdict {
+  display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono);
+  font-size: 11px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor;
+}
+.verdict.ok  { color: var(--allow); }
+.verdict.no  { color: var(--deny); }
+
+.answer { font-size: 15px; line-height: 1.65; margin: 12px 0 0; white-space: pre-wrap; }
+.answer.refused { color: var(--deny); }
+
+.cites { margin-top: 13px; display: flex; flex-direction: column; gap: 4px; }
+.cite { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+.cite::before { content: "└ "; color: var(--text-mute); }
+
+.evidence { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.ev { border-left: 2px solid var(--line); padding: 7px 0 7px 11px; margin-bottom: 9px; }
+.ev .head { font-family: var(--mono); font-size: 10.5px; color: var(--text-mute);
+  display: flex; gap: 9px; flex-wrap: wrap; }
+.ev .text { font-size: 12.5px; color: var(--text-dim); margin-top: 4px;
+  max-height: 3.6em; overflow: hidden; }
+.ev.fig .val { font-family: var(--mono); font-size: 16px; color: var(--allow); font-weight: 650; }
+
+.fb { display: flex; gap: 7px; margin-top: 14px; align-items: center; flex-wrap: wrap; }
+.fb button { background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
+  border-radius: var(--r); padding: 5px 13px; cursor: pointer; font-size: 12px;
+  font-family: inherit; }
+.fb button:hover { border-color: var(--info); color: var(--info); }
+.fb input { flex: 1; min-width: 180px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: var(--r); padding: 5px 10px;
+  color: var(--text); font-family: inherit; font-size: 12px; }
+.fb .note { font-size: 11px; color: var(--allow); font-family: var(--mono); }
+
+/* ---------- audit ---------- */
+.log { max-height: 262px; overflow-y: auto; font-family: var(--mono); font-size: 11px; }
+.log-row { display: grid; grid-template-columns: 62px 68px 1fr; gap: 9px;
+  padding: 5px 0; border-bottom: 1px solid var(--line-soft); align-items: baseline; }
+.log-row:last-child { border-bottom: 0; }
+.log .time { color: var(--text-mute); }
+.log .who  { color: var(--text-dim); }
+.log .what { color: var(--text-dim); word-break: break-word; }
+.log .allow { color: var(--allow); }
+.log .block { color: var(--deny); }
+
+.empty { color: var(--text-mute); font-family: var(--mono); font-size: 11.5px; }
+.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line);
+  border-top-color: var(--info); border-radius: 50%; animation: s .7s linear infinite; }
+@keyframes s { to { transform: rotate(360deg); } }
+
+.footnote { margin-top: 16px; font-size: 11.5px; color: var(--text-mute); line-height: 1.7; }
+.footnote code { font-family: var(--mono); color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="brand">
+      <h1>Financial Data Agent</h1>
+      <span class="sub">access console</span>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="grid">
+
+    <!-- ---------- left rail: identity and its consequences ---------- -->
+    <div>
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Session identity</h2>
+        <div class="body" id="roles"><span class="empty">loading…</span></div>
+      </section>
+
+      <section class="panel">
+        <h2>Feedback recorded</h2>
+        <div class="body"><div id="fblist" class="empty">none yet</div></div>
+      </section>
+    </div>
+
+    <!-- ---------- main column ---------- -->
+    <div>
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Question</h2>
+        <div class="body">
+          <form class="ask" id="askform">
+            <input id="q" autocomplete="off"
+                   placeholder="Ask about Apple's filings…"
+                   aria-label="Question">
+            <button type="submit" id="go">Ask</button>
+          </form>
+          <div class="presets" id="presets"></div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Decision pipeline</h2>
+        <div class="pipe" id="pipe"></div>
+      </section>
+
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Result</h2>
+        <div class="body" id="result"><span class="empty">ask something</span></div>
+      </section>
+
+      <section class="panel">
+        <h2>Audit trail — decisions only, never document text</h2>
+        <div class="body"><div class="log" id="log"><span class="empty">empty</span></div></div>
+      </section>
+
+      <p class="footnote">
+        Role is asserted, not authenticated — a deliberate scope choice, since the
+        requirement is enforcement at the <em>data layer</em>. Every figure and every
+        access decision is computed in Python; the model only phrases the result, and
+        the system answers with no API key at all. Restricted material never enters the
+        prompt, which is what <code>tests/test_agent.py</code> asserts by inspecting
+        the assembled context rather than the output.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+const STAGES = [
+  ["01", "PLAN",     "declare what answering would require"],
+  ["02", "GUARD",    "check the plan against the role"],
+  ["03", "RETRIEVE", "gated SQL + gated BM25"],
+  ["04", "COMPOSE",  "figures deterministic, prose optional"],
+  ["05", "AUDIT",    "append the decision"],
+];
+
+const PRESETS = [
+  "What was net sales in FY2025?",
+  "What is revenue per employee for FY2025?",
+  "How many employees are there?",
+  "What was net sales in FY2023?",
+  "What are the main risk factors?",
+  "What is executive compensation?",
+];
+
+let ctx = null, role = "CEO", last = null;
+
+const $ = id => document.getElementById(id);
+
+function tagClass(tag) {
+  if (tag.startsWith("financials")) return "t-fin";
+  if (tag.startsWith("narrative"))  return "t-narr";
+  if (tag.startsWith("hr"))         return "t-hr";
+  return "t-gov";
+}
+
+function renderStats() {
+  $("stats").innerHTML = `
+    <span class="stat">corpus <b>Apple SEC filings</b></span>
+    <span class="stat">newest <b>FY${ctx.corpus_max_fy}</b></span>
+    <span class="stat">model <b>${ctx.llm_provider || "none — deterministic"}</b></span>
+    <span class="stat">feedback <b id="fbn">${ctx.feedback_count}</b></span>`;
+}
+
+function renderRoles() {
+  $("roles").innerHTML = ctx.roles.map(r => `
+    <button class="role" data-role="${r.name}" aria-pressed="${r.name === role}">
+      <div class="name">${r.name}</div>
+      <div class="meta">${r.recent_years_only
+        ? `newest ${r.recent_years_only} fiscal years (FY${r.min_fiscal_year}+)`
+        : "all periods"}</div>
+      <div class="chips">
+        ${r.allowed_tags.map(t => `<span class="chip ${tagClass(t)}">${t}</span>`).join("")}
+        ${r.denied_tags.map(t => `<span class="chip off ${tagClass(t)}">${t}</span>`).join("")}
+      </div>
+    </button>`).join("");
+
+  document.querySelectorAll(".role").forEach(btn =>
+    btn.onclick = () => { role = btn.dataset.role; renderRoles(); });
+}
+
+function renderPipe(states) {
+  $("pipe").innerHTML = STAGES.map(([n, label, hint]) => {
+    const s = states ? states[label.toLowerCase()] : null;
+    const state = s === undefined || s === null ? "idle" : s;
+    const detail = states && states.detail && states.detail[label.toLowerCase()];
+    return `<div class="stage" data-state="${state}">
+      <div class="n">${n}</div>
+      <div class="label"><span class="dot"></span>${label}</div>
+      <div class="detail">${detail || hint}</div>
+    </div>`;
+  }).join("");
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function renderResult(r) {
+  const plan = r.plan;
+  const tags = plan.tags.map(t =>
+    `<span class="chip ${tagClass(t)}">${t}</span>`).join("");
+
+  const figs = (r.figures || []).map(f => `
+    <div class="ev fig">
+      <div class="head"><span>${esc(f.metric)}</span><span>${esc(f.period)}</span>
+        <span class="${tagClass(f.tag)}">${f.tag}</span></div>
+      <div class="val">${esc(f.display)}</div>
+      <div class="head">${esc(f.citation)}</div>
+    </div>`).join("");
+
+  const passages = (r.passages || []).slice(0, 3).map(p => `
+    <div class="ev">
+      <div class="head"><span>${esc(p.citation)}</span>
+        <span class="${tagClass(p.tag)}">${p.tag}</span>
+        <span>score ${p.score}</span></div>
+      <div class="text">${esc(p.text.slice(0, 260))}…</div>
+    </div>`).join("");
+
+  $("result").innerHTML = `
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="verdict ${r.allowed ? "ok" : "no"}">
+        ${r.allowed ? "permitted" : "refused"}</span>
+      <span class="chip" style="color:var(--text-mute)">intent ${plan.intent}</span>
+      ${tags}
+    </div>
+
+    <p class="answer ${r.allowed ? "" : "refused"}">${esc(r.answer)}</p>
+
+    ${r.allowed && r.citations.length ? `<div class="cites">${
+      r.citations.slice(0, 5).map(c => `<span class="cite">${esc(c)}</span>`).join("")
+    }</div>` : ""}
+
+    ${(figs || passages) ? `<div class="evidence">${figs}${passages}</div>` : ""}
+
+    ${r.reranked_by_feedback
+      ? `<div class="fb"><span class="note">ranking adjusted by earlier feedback</span></div>`
+      : ""}
+
+    ${r.allowed ? `
+      <div class="fb">
+        <button id="up">good answer</button>
+        <button id="down">wrong</button>
+        <input id="corr" placeholder="what should it have said? (optional)">
+        <span class="note" id="fbnote"></span>
+      </div>` : ""}`;
+
+  if (r.allowed) {
+    $("up").onclick   = () => sendFeedback("up");
+    $("down").onclick = () => sendFeedback("down");
+  }
+}
+
+async function sendFeedback(verdict) {
+  const correction = $("corr") ? $("corr").value.trim() : "";
+  await fetch("/api/feedback", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role, question: last.question, answer: last.result.answer, verdict,
+      chunk_ids: (last.result.passages || []).map(p => p.id),
+      correction: correction || null,
+    }),
+  });
+  $("fbnote").textContent = "recorded — ask again to see the ranking change";
+  loadFeedback(); loadAudit();
+}
+
+async function ask(question) {
+  $("go").disabled = true;
+  $("result").innerHTML = '<span class="empty"><span class="spin"></span> working…</span>';
+  renderPipe({ plan: "ok", guard: "idle", retrieve: "idle",
+               compose: "idle", audit: "idle" });
+
+  const res = await fetch("/api/ask", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, question }),
+  });
+  const r = await res.json();
+  last = { question, result: r };
+
+  const denied = [...(r.denied_tags || []), ...(r.denied_periods || [])];
+  renderPipe({
+    plan: "ok",
+    guard: r.allowed ? "ok" : "blocked",
+    retrieve: r.allowed ? "ok" : "skipped",
+    compose: r.allowed ? "ok" : "skipped",
+    audit: "ok",
+    detail: {
+      plan: `${r.plan.metrics.length || "no"} metric(s) · ${r.plan.periods.join(", ")}`,
+      guard: r.allowed ? "plan permitted" : `denied: ${denied.join(", ")}`,
+      retrieve: r.allowed
+        ? `${(r.figures || []).length} figures · ${(r.passages || []).length} passages`
+        : "not reached — nothing was fetched",
+      compose: r.allowed ? (r.source === "llm" ? "phrased by model" : "deterministic")
+                         : "not reached",
+      audit: "decision appended",
+    },
+  });
+
+  renderResult(r);
+  $("go").disabled = false;
+  loadAudit();
+}
+
+async function loadAudit() {
+  const { rows } = await (await fetch("/api/audit?limit=24")).json();
+  $("log").innerHTML = rows.length ? rows.map(e => `
+    <div class="log-row">
+      <span class="time">${e.ts.slice(11, 19)}</span>
+      <span class="who">${esc(e.role)}</span>
+      <span class="what"><span class="${e.allowed ? "allow" : "block"}">
+        ${e.allowed ? "ALLOW" : "DENY "}</span> ${esc(e.context)}</span>
+    </div>`).join("") : '<span class="empty">empty</span>';
+}
+
+async function loadFeedback() {
+  const { rows } = await (await fetch("/api/feedback?limit=8")).json();
+  $("fblist").innerHTML = rows.length
+    ? rows.map(r => `<div class="cite">${esc(r.summary)}</div>`).join("")
+    : '<span class="empty">none yet</span>';
+}
+
+(async function init() {
+  ctx = await (await fetch("/api/context")).json();
+  renderStats(); renderRoles(); renderPipe(null);
+
+  $("presets").innerHTML = PRESETS.map(p =>
+    `<button class="preset">${p}</button>`).join("");
+  document.querySelectorAll(".preset").forEach(b =>
+    b.onclick = () => { $("q").value = b.textContent; ask(b.textContent); });
+
+  $("askform").onsubmit = e => {
+    e.preventDefault();
+    const q = $("q").value.trim();
+    if (q) ask(q);
+  };
+
+  loadAudit(); loadFeedback();
+
+  // Deep links: /?role=CTO&q=... reproduces an exact demo state. Useful for
+  // walking someone through a specific refusal without typing it live.
+  const params = new URLSearchParams(location.search);
+  const wanted = (params.get("role") || "").toUpperCase();
+  if (ctx.roles.some(r => r.name === wanted)) { role = wanted; renderRoles(); }
+  const preQ = params.get("q");
+  if (preQ) { $("q").value = preQ; ask(preQ); }
+})();
+</script>
+</body>
+</html>

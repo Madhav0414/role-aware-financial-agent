@@ -1070,3 +1070,74 @@ a supplier operations report and carries six different manoeuvres. It sits in
 
 **REJECTED** — A string constant inside the test file. Faster, and it would
 skip the PDF extraction step where the line-break evasion actually happens.
+
+---
+
+## Part 13 — The web console
+
+### D62 · The interface's primary object is the DECISION, not the answer ⭐
+
+**WHY** — A chat box is what everyone builds, and it hides the only thing this
+system is actually interesting for. If the whole design claim is "restricted
+data never reaches the model", the interface should let you *watch that
+happen*.
+
+**HOW** — The centre of the screen is a five-stage pipeline —
+`PLAN → GUARD → RETRIEVE → COMPOSE → AUDIT`. On a refusal, GUARD turns red and
+RETRIEVE and COMPOSE grey out with *"not reached — nothing was fetched"*. The
+refusal is legible as a **stopped pipeline**, not as a sentence claiming
+something was blocked.
+
+The left rail shows each role's tags, with denied ones struck through, so the
+consequence of switching identity is visible before a question is asked. The
+audit trail streams underneath.
+
+**REJECTED** — A conventional chat transcript. Familiar, and it would render
+the refusal as just another message — indistinguishable from the model
+choosing not to answer, which is precisely the confusion this system exists to
+remove.
+
+---
+
+### D63 · The API re-implements no access logic
+
+**WHY** — Two enforcement points mean two things to keep in agreement, and the
+one that drifts is the one that leaks.
+
+**HOW** — `src/api.py` builds an `AccessGate` from the asserted role and calls
+the same `answer()` the CLI calls. It adds one thing only: a `stages` dict so
+the page can draw the pipeline. Tests assert the HTTP layer refuses exactly
+what the CLI refuses, and that an unknown or wrongly-cased role fails closed
+rather than falling back to a default.
+
+**REJECTED** — Middleware that checks permissions per route. It would look like
+security while duplicating a decision already made correctly one layer down.
+
+---
+
+### D64 · The server binds to localhost only
+
+**WHY** — The API asserts identity from the request rather than authenticating
+it. On a network interface, anyone could choose their own role.
+
+**HOW** — `scripts/serve.py` binds `127.0.0.1`. The docstring says why, so the
+next person does not "fix" it by binding wider. The scope note in the README
+states the same thing: real authentication changes only which `Role` object is
+constructed.
+
+**REJECTED** — Binding `0.0.0.0` for convenience. One flag, and it turns a
+documented scope decision into an open door.
+
+---
+
+### D65 · Deep links reproduce an exact demo state
+
+**WHY** — Typing a question live during a walkthrough is a chance to fumble it,
+and the refusal cases are the ones worth showing precisely.
+
+**HOW** — `/?role=CTO&q=...` selects the role and runs the question on load.
+Costs six lines, and makes every scenario in the recording reproducible by
+whoever watches it.
+
+**REJECTED** — A scripted demo mode. More code, and it would show a rehearsal
+rather than the real system.

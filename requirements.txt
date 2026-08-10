@@ -4,4 +4,11 @@ openpyxl>=3.1      # .xlsx engine for pandas
 lxml>=5.0          # HTML table parser behind pandas.read_html
 numpy>=1.26        # BM25 scoring
 pyyaml>=6.0        # roles.yaml / sources.yaml
+fastapi>=0.110     # web console API
+uvicorn>=0.27      # ASGI server for the console
 pytest>=8.0        # tests
+
+# Optional. The system answers every factual question without either of these;
+# they only affect how the final prose is worded.
+#   openai>=1.0
+#   anthropic>=0.40
