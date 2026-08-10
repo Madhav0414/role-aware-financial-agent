@@ -534,3 +534,102 @@ headcount in people.
 
 **REJECTED** — Per-metric grammar rules. Real work, zero marks, and the LLM
 replaces this phrasing in Task 8 anyway.
+
+---
+
+## Part 7 — Excel ingestion
+
+### D33 · One loader handles both workbook shapes, without branching on filename
+
+**WHY** — The corpus contains two layouts. SEC-published sheets put
+"12 Months Ended" on one header row and the period end dates on the next, with
+the duration spanning merged cells. The rebuilt sheets combine them into a
+single header. Special-casing by filename would break the moment either format
+changed.
+
+**HOW** — Scan the first four rows as one header *block*, carry each duration
+rightwards across the columns it spans, and treat any column resolving to a
+date as a period column. Both layouts then collapse to the same structure.
+
+**REJECTED** — Two loaders keyed on `xlsx_origin` from the manifest. It would
+tie the parser to how the file was obtained rather than to how it is shaped.
+
+---
+
+### D34 · Only 12-month and 3-month columns are ingested
+
+**WHY** — A 10-Q publishes "3 Months Ended" *and* "9 Months Ended" side by
+side. The nine-month column is cumulative year-to-date. Ingesting both would
+file two different meanings under one period label, and a comparison between
+quarters would silently mix them.
+
+**HOW** — `ACCEPTED_DURATIONS = {3, 12}`; anything else returns None from
+`parse_period_header` and is skipped. A test asserts a nine-month header is
+rejected.
+
+**REJECTED** — Taking every duration and disambiguating later. The ambiguity
+would already be baked into the stored data by then.
+
+---
+
+### D35 · Accounting notation is stripped before the sign is read
+
+**WHY** — Caught by a failing test. Negatives are written `(24)`, and with a
+currency prefix that becomes `$ (1,234)` — where the parenthesis is no longer
+the first character. Testing for the sign first silently returned None, so
+every negative figure with a currency symbol would have vanished from the
+corpus rather than erroring.
+
+**HOW** — Strip `$` and thousands separators first, *then* test for enclosing
+parentheses. Parameterised tests cover bare integers, `$ 416,161`, `(24)` and
+`$ (1,234)`.
+
+**REJECTED** — A regex for the whole number format. Harder to read, and it
+would have hidden the ordering bug rather than exposing it.
+
+---
+
+### D36 · Category headers scope the rows beneath them ⭐
+
+**WHY** — This is the most consequential ingestion decision. XBRL renderings
+nest breakdowns: a row reading **iPhone** with no figures, then a row reading
+**Net sales** carrying 209,586. Flattened, `net_sales` for FY2025 resolved to
+**twenty different values** — the real total of 416,161 alongside every product
+line and region. "What was net sales in FY2025?" would have returned whichever
+one happened to come first.
+
+**HOW** — A labelled row with no value in any period column is a category
+header and qualifies everything below it: `iphone_net_sales`,
+`services_net_sales`. XBRL scaffolding rows (`[Line Items]`, `[Abstract]`) are
+skipped so they cannot hijack the scope. A descriptive total closes the
+category; a bare "Total" keeps the scope as a qualifier, because a footnote may
+hold several sub-tables each ending in one.
+
+Two tests lock it in: `net_sales` must resolve to exactly one value, and the
+five product lines must sum to the consolidated total. If the scoping breaks,
+the parts stop adding up to the whole.
+
+**REJECTED** — Preferring the consolidated statement sheet and discarding
+duplicates. It would have produced a correct headline figure and thrown away
+the entire segment breakdown, which is real data the ANALYST role is meant to
+read.
+
+---
+
+### D37 · Known limitation: ~12% of deep footnote metrics remain ambiguous
+
+**WHY RECORD IT** — 306 of 2,561 metric/period keys still carry more than one
+value, all inside footnote tables such as income-tax provisions and derivative
+fair values, where several sub-tables repeat identical row labels. None of the
+headline metrics are affected. Stating this is more useful than implying the
+parser is perfect.
+
+**HOW IT WOULD BE FIXED** — The rendered `R*.htm` tables are a *presentation*
+of the underlying XBRL, and the XBRL element name (`us-gaap:RevenueFromContract
+WithCustomerExcludingAssessedTax`) is globally unique by construction. Parsing
+the XBRL instance document instead of its rendering removes label collisions
+entirely. That is a larger change than the remaining time allowed, and it is
+the first thing to do with more of it.
+
+**REJECTED** — Hand-curating an alias map for the footnote metrics. It would
+paper over the 306 known cases and do nothing for the next filing.
