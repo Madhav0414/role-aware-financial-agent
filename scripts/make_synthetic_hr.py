@@ -32,13 +32,18 @@ ROWS = [
     ("Sales and Marketing",     2024,  21500),
     ("Corporate Functions",     2024,  11000),
     ("General and Administrative", 2024, 10000),
-    ("Retail",                  2025,  63500),
-    ("Operations",              2025,  29000),
-    ("Research and Development", 2025, 33500),
-    ("Sales and Marketing",     2025,  22000),
-    ("Corporate Functions",     2025,  11500),
-    ("General and Administrative", 2025, 10500),
+    ("Retail",                  2025,  62500),
+    ("Operations",              2025,  28500),
+    ("Research and Development", 2025, 32500),
+    ("Sales and Marketing",     2025,  21500),
+    ("Corporate Functions",     2025,  11000),
+    ("General and Administrative", 2025, 10000),
 ]
+
+# The real company-wide counts Apple reports in its 10-K (p.8 of each filing).
+# The fabricated departmental splits are scaled to land on these totals so the
+# synthetic data stays consistent with the real filings it sits beside.
+REAL_TOTALS = {2023: 161_000, 2024: 164_000, 2025: 166_000}
 
 
 def main() -> None:
@@ -55,6 +60,15 @@ def main() -> None:
     totals = df.groupby("FiscalYear")["Headcount"].sum().to_dict()
     print(f"Wrote {OUT}")
     print(f"  {len(df)} rows, totals by fiscal year: {totals}")
+
+    # Fail loudly rather than ship synthetic data that contradicts the filings.
+    for fy, total in totals.items():
+        expected = REAL_TOTALS.get(fy)
+        if expected is not None and total != expected:
+            raise SystemExit(
+                f"FY{fy} synthetic total {total:,} does not match the "
+                f"{expected:,} Apple reports in its 10-K")
+    print("  totals reconcile with the figures stated in the 10-K filings")
 
 
 if __name__ == "__main__":

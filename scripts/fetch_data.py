@@ -22,6 +22,7 @@ Run:  python scripts/fetch_data.py
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -46,9 +47,11 @@ WANTED = {"10-K": 3, "10-Q": 4, "DEF 14A": 1}
 # SEC asks for no more than 10 requests/second.
 REQUEST_DELAY_S = 0.2
 
-# R1 is the cover page and R2 is usually auditor information; the primary
-# statements start at R3. Ten covers them with room to spare on either side.
-STATEMENT_R_FILES = range(2, 12)
+# The R*.htm files are EDGAR's rendered XBRL tables. Their count varies by
+# filing (a 10-K has ~70, a 10-Q ~40), so the list is read from the filing's
+# index rather than guessed at — an earlier fixed range silently captured only
+# the first ten and dropped sixty detail tables.
+R_FILE_PATTERN = re.compile(r"^R(\d+)\.htm$")
 
 # Apple's fiscal year ends in late September, so a quarter ending in Oct-Dec
 # belongs to the *next* fiscal year. Q1 FY2026 ends 27 Dec 2025.
@@ -132,6 +135,32 @@ def verify_pdf(path: Path) -> tuple[int, int]:
         return doc.page_count, len(doc[0].get_text())
 
 
+def r_file_numbers(base: str) -> list[int]:
+    """Read the filing's index to learn which R*.htm files actually exist."""
+    index = json.loads(fetch(f"{base}/index.json"))
+    nums = []
+    for item in index["directory"]["item"]:
+        m = R_FILE_PATTERN.match(item["name"])
+        if m:
+            nums.append(int(m.group(1)))
+    return sorted(nums)
+
+
+def unique_sheet_name(title: str, taken: set[str]) -> str:
+    """Excel caps sheet names at 31 chars and forbids []:*?/\\ — and truncation
+    makes collisions likely across seventy statement tables, so names are
+    de-duplicated with a numeric suffix.
+    """
+    safe = "".join(c for c in title if c not in "[]:*?/\\").strip() or "Sheet"
+    name, n = safe[:31], 2
+    while name in taken:
+        suffix = f"_{n}"
+        name = safe[:31 - len(suffix)] + suffix
+        n += 1
+    taken.add(name)
+    return name
+
+
 def build_xlsx_from_r_files(base: str, out_path: Path) -> int:
     """Rebuild statement tables from EDGAR's R*.htm XBRL renderings.
 
@@ -139,7 +168,8 @@ def build_xlsx_from_r_files(base: str, out_path: Path) -> int:
     of sheets written.
     """
     sheets: dict[str, pd.DataFrame] = {}
-    for n in STATEMENT_R_FILES:
+    taken: set[str] = set()
+    for n in r_file_numbers(base):
         try:
             html = fetch(f"{base}/R{n}.htm").decode("utf-8", errors="replace")
         except urllib.error.HTTPError:
@@ -161,14 +191,13 @@ def build_xlsx_from_r_files(base: str, out_path: Path) -> int:
         # The first column header carries the statement name, e.g.
         # "CONSOLIDATED STATEMENTS OF OPERATIONS - USD ($) $ in Millions".
         title = str(df.columns[0]).split(" - ")[0].strip() or f"R{n}"
-        sheets.setdefault(title[:31], df)
+        sheets[unique_sheet_name(title, taken)] = df
 
     if not sheets:
         return 0
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         for name, df in sheets.items():
-            safe = "".join(c for c in name if c not in "[]:*?/\\")[:31]
-            df.to_excel(writer, sheet_name=safe or "Sheet1", index=False)
+            df.to_excel(writer, sheet_name=name, index=False)
     return len(sheets)
 
 
