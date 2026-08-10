@@ -1326,3 +1326,35 @@ than showing them raw.
 
 **REJECTED** — Renaming the metrics themselves. The internal name records where
 a figure sits in the filing, which is what makes the locator meaningful.
+
+---
+
+### D76 · A recognised metric with no data must say so ⭐
+
+**WHY** — The most misleading failure in the system, and the third one found by
+*using* it rather than testing it.
+
+Asked *"What was profit in 2026"*, the planner did everything right: "profit"
+matched `net_income`, "2026" parsed to FY2026, the guard permitted it. But
+**FY2026 is a partial year** — the corpus holds only quarterly filings for it,
+so no annual figure exists. Zero figures came back, and the composer fell
+through to narrative search and returned unrelated tariff prose under a
+confident heading.
+
+This is worse than the earlier vague-question bug (`D66`). There, nothing was
+understood. Here the question was understood *perfectly* and the answer was
+still wrong — which makes it far more convincing, and far less likely to be
+questioned.
+
+**HOW** — When a plan names metrics but retrieval returns nothing, the system
+reports exactly that and lists the periods the metric *does* have, quarters
+included: *"I do not hold Net income for FY2026. Available periods for it:
+FY2025, FY2024, FY2023, … Q3FY2026."*
+
+`periods_for_metrics()` is gated like every other read, so a role cannot learn
+which periods exist for a metric it may not see. A test asserts the CTO's
+headcount refusal never leaks an availability list.
+
+**REJECTED** — Silently widening the search to nearby periods. It would answer
+a question about 2026 with a figure from 2025, which is the same failure
+wearing a more helpful expression.

@@ -292,6 +292,49 @@ def test_an_unanswerable_question_says_so():
     assert "does not match" in lowered or "could not find" in lowered
 
 
+def test_a_recognised_metric_with_no_data_says_which_periods_exist():
+    """The most misleading failure in the system, found by using the console.
+
+    "What was profit in 2026" parsed correctly — net_income, FY2026 — but
+    FY2026 is a partial year covered only by quarterly filings, so there is no
+    annual figure. With zero figures it fell through to narrative search and
+    returned unrelated tariff prose under a confident heading. The question was
+    UNDERSTOOD, which makes the wrong answer far more convincing.
+    """
+    result = ask_ceo("What was profit in 2026")
+
+    assert result["allowed"] is True
+    assert result["figures"] == []
+    assert "do not hold" in result["answer"]
+    assert "Net income" in result["answer"]
+    # It must point at periods that actually exist, including the quarters.
+    assert "FY2025" in result["answer"]
+    assert "tariff" not in result["answer"].lower()
+
+
+def test_the_quarter_that_does_exist_still_answers():
+    """The control: FY2026 has no annual figure, but its quarters do."""
+    result = ask_ceo("What was net income in Q3FY2026?")
+
+    assert result["figures"]
+    assert "29,789" in result["answer"]
+
+
+def test_a_year_before_the_corpus_is_reported_honestly():
+    result = ask_ceo("What was net sales in FY2019?")
+    assert "do not hold" in result["answer"]
+
+
+def test_a_restricted_metric_is_refused_before_availability_is_revealed():
+    """Availability is itself information. A role must not learn which periods
+    exist for a metric it may not read."""
+    result = answer("What was headcount in FY2026?", gate("CTO"),
+                    understanding_dir=UND, use_llm=False, use_feedback=False)
+
+    assert result["allowed"] is False
+    assert "Available periods" not in result["answer"]
+
+
 def test_nonsense_gets_guidance_not_a_passage():
     result = ask_ceo("asdkjfh qwerty zzz")
 

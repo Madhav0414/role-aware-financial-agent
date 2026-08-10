@@ -23,7 +23,7 @@ from src.agent import llm, tools
 from src.agent.planner import Planner
 from src.feedback import rerank
 from src.ingest.chunker import load_config
-from src.understanding.facts import corpus_max_fy
+from src.understanding.facts import corpus_max_fy, periods_for_metrics
 
 UNDERSTANDING = Path("data/understanding")
 CONFIG = Path("config/sources.yaml")
@@ -156,7 +156,8 @@ def build_context(question: str, gate: AccessGate,
 
 def _compose_deterministic(figures: list[dict], passages: list[dict],
                            plan: QueryPlan,
-                           suggestions: list[str] | None = None) -> str:
+                           suggestions: list[str] | None = None,
+                           available: list[str] | None = None) -> str:
     """Word the answer without a model.
 
     This is the keyless path, and it is also the fallback whenever the model is
@@ -194,8 +195,21 @@ def _compose_deterministic(figures: list[dict], passages: list[dict],
     if figures:
         return " ".join(lines)
 
-    # No figures matched. Decide whether the narrative hits are worth showing
-    # at all, rather than presenting the least-bad passage as an answer.
+    # The metric was recognised but the requested period holds nothing. This is
+    # the most misleading case in the system: the question was understood, so
+    # falling through to narrative search returns unrelated prose under a
+    # confident heading. Say what is actually available instead.
+    if plan.metrics:
+        names = ", ".join(_label(m) for m in plan.metrics)
+        asked = ", ".join(plan.periods)
+        if available:
+            return (f"I do not hold {names} for {asked}. "
+                    f"Available periods for it: {', '.join(available[:10])}.")
+        return (f"I do not hold any figures for {names} that this role may "
+                f"read.")
+
+    # No metric was recognised either. Decide whether the narrative hits are
+    # worth showing at all, rather than presenting the least-bad passage.
     relevant = [p for p in passages if p.get("score", 0) >= MIN_RELEVANCE]
 
     # A plan with topic tags means the question was ABOUT something this corpus
@@ -290,7 +304,14 @@ def answer(question: str, gate: AccessGate,
     suggestions = planner.suggest_metrics(question) \
         if not plan.metrics and not plan.tags else []
 
-    deterministic = _compose_deterministic(figures, passages, plan, suggestions)
+    # Only looked up when a recognised metric returned nothing, so the answer
+    # can name the periods that do exist rather than going quiet.
+    available = periods_for_metrics(understanding_dir / "facts.db", gate,
+                                    list(plan.metrics)) \
+        if plan.metrics and not figures else []
+
+    deterministic = _compose_deterministic(figures, passages, plan,
+                                           suggestions, available)
     text, source = deterministic, "deterministic"
 
     if use_llm:

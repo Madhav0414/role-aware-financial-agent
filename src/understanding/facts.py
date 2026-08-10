@@ -189,6 +189,38 @@ def query_facts(db_path: Path, gate: AccessGate,
     return _dedupe(facts) if dedupe else facts
 
 
+def periods_for_metrics(db_path: Path, gate: AccessGate,
+                        metrics: list[str]) -> list[str]:
+    """Which periods this role can actually get these metrics for.
+
+    Used when a metric was recognised but the requested period holds no data,
+    so the system can say "I have this for FY2023-FY2025" instead of falling
+    through to an unrelated narrative passage.
+
+    Gated like every other read: a role must not learn which periods exist for
+    a metric it may not see.
+    """
+    if not metrics:
+        return []
+
+    where, params = gate.sql_predicate()
+    params = list(params) + list(metrics)
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute(
+            f"SELECT DISTINCT period FROM facts WHERE {where} "
+            f"AND metric IN ({','.join('?' * len(metrics))})", params).fetchall()
+    finally:
+        con.close()
+
+    # Annual periods first, then quarters, each newest-first: the most likely
+    # useful alternative should be the first thing read.
+    def key(label: str) -> tuple:
+        return (label.startswith("Q"), -int(label[-4:]), label)
+
+    return sorted((r[0] for r in rows), key=key)
+
+
 def corpus_max_fy(db_path: Path) -> int:
     """Newest fiscal year in the corpus — the anchor for every time window.
 
