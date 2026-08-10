@@ -979,3 +979,94 @@ then truncates to `k`.
 
 **REJECTED** — Re-ranking the whole corpus. Correct and needlessly expensive;
 three times the window is enough for a single vote to change the visible order.
+
+---
+
+## Part 12 — Prompt injection (the bonus)
+
+### D57 · Quarantine at ingest, not filtering at output
+
+**WHY** — The usual approach is to instruct the model to ignore embedded
+commands. That is a request, and the model cannot reliably distinguish
+narration from instruction when both arrive as text in the same window.
+
+**HOW** — Text is scanned as it is chunked. A passage matching an injection
+pattern is marked `quarantined`, and `AccessGate.filter_chunks` drops it before
+any tag check. The payload is **absent from the prompt**, so there is nothing
+to obey. Verified in the demo: `'ignore all previous instructions' in CEO's
+prompt: False`.
+
+**REJECTED** — Stripping the offending sentences and keeping the rest. It
+assumes the sentence boundary is where the attack ends, which an attacker
+controls.
+
+---
+
+### D58 · Patterns target manoeuvres, not wordings
+
+**WHY** — Matching the literal string "ignore previous instructions" is defeated
+by any paraphrase. Matching the *move* — overriding prior instructions,
+asserting a system turn, claiming authority, demanding disclosure — survives
+rewording.
+
+**HOW** — Twelve patterns across six labelled manoeuvres. `detect` returns the
+labels rather than a boolean, so the log records *what was attempted*: "this
+document tried to assert a system turn" is far more useful to a reviewer than
+"blocked". Text is whitespace-normalised first, because PDF extraction breaks
+words across lines and an attacker gets that for free by using a narrow column.
+
+**REJECTED** — An LLM classifier for injection. It would put a model in the
+security path, and a model is what the attacker is targeting.
+
+---
+
+### D59 · Four layers, and the weakest is named as weak
+
+**WHY** — Claiming prompt injection is "solved" would be false, and an
+interviewer will know it.
+
+**HOW** — Quarantine at ingest (structural — the text never arrives).
+Delimiting and labelling in the system prompt (mitigation). No text-to-execution
+path, since SQL is parameterised and tools take typed arguments (absolute — no
+retrieved string can become a query or a tool call). Output checking
+(mitigation, and the weakest: it only catches what it knows to look for).
+
+The module docstring says plainly which layers are structural and which merely
+raise the cost. If the output check ever fires, something upstream is already
+broken.
+
+**REJECTED** — Presenting all four as equally strong. Overstating a defence is
+worse than a gap you have named.
+
+---
+
+### D60 · False positives are the expensive failure
+
+**WHY** — A quarantined chunk is withheld from *everyone*. An over-eager
+pattern therefore deletes parts of the corpus silently, and nobody notices
+until an answer is missing something.
+
+**HOW** — Four tests assert that ordinary filing prose is not flagged,
+including the sentence "The system of internal control over financial
+reporting was effective" — which contains the word "system" immediately before
+a colon-free clause and is exactly the shape a sloppy `system:` rule would
+catch. A separate test asserts the genuine 10-K has **zero** quarantined
+chunks.
+
+**REJECTED** — Broad patterns tuned only for recall. Better detection, and it
+would quietly hollow out the corpus.
+
+---
+
+### D61 · The fixture goes through the ordinary ingestion path
+
+**WHY** — A defence tested against a document that took a special route proves
+nothing about the route an attacker would use.
+
+**HOW** — `scripts/make_injection_fixture.py` produces a real PDF that reads as
+a supplier operations report and carries six different manoeuvres. It sits in
+`data/raw/_synthetic/`, is labelled fabricated on its own first page, and
+`chunk_corpus` ingests it exactly like a genuine filing.
+
+**REJECTED** — A string constant inside the test file. Faster, and it would
+skip the PDF extraction step where the line-break evasion actually happens.

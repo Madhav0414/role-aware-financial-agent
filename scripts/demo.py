@@ -143,6 +143,40 @@ def act_four(max_fy: int, feedback_db: Path) -> None:
     print("  shows the difference.")
 
 
+def act_five(max_fy: int) -> None:
+    rule("ACT 5  Prompt injection (bonus)")
+    fixture = Path("data/raw/_synthetic/poisoned_supplier_report.pdf")
+    if not fixture.exists():
+        print("\n  fixture missing — run scripts/make_injection_fixture.py")
+        return
+
+    from src.agent import sanitize
+    from src.ingest.chunker import chunk_document, load_config
+
+    cfg = load_config(Path("config/sources.yaml"))
+    chunks = chunk_document(fixture, fiscal_year=2025, cfg=cfg)
+    text = "\n".join(c.text for c in chunks)
+
+    print(f"\n  A poisoned document was placed in the corpus: {fixture.name}")
+    print("  It reads as a supplier report and carries hidden instructions.\n")
+    print(f"  manoeuvres detected : {', '.join(sanitize.detect(text))}")
+    print(f"  chunks quarantined  : {sum(c.quarantined for c in chunks)}"
+          f" of {len(chunks)}")
+
+    for role in ("CEO", "CTO", "ANALYST"):
+        visible = gate(role, max_fy).filter_chunks(chunks)
+        print(f"  retrievable by {role:<8}: {len(visible)}")
+
+    context = build_context("supplier capacity and component supply",
+                            gate("CEO", max_fy), understanding_dir=UND,
+                            use_feedback=False).lower()
+    print(f"\n  'ignore all previous instructions' in CEO's prompt: "
+          f"{'ignore all previous instructions' in context}")
+    print("\n  The instructions are not filtered out of the answer. They are")
+    print("  absent from the prompt, so there is nothing for the model to obey.")
+    print("  Quarantine is a SAFETY rule, not a permission — even CEO gets none.")
+
+
 def main() -> int:
     if not (UND / "facts.db").exists():
         print("Run `python scripts/build_understanding.py` first.",
@@ -163,6 +197,7 @@ def main() -> int:
         act_two(max_fy)
         act_three(max_fy)
         act_four(max_fy, feedback_db)
+        act_five(max_fy)
 
         rule("DONE")
         return 0

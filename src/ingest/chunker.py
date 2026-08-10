@@ -12,18 +12,22 @@ untagged and quietly visible to roles that should not see it.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 from src.access.model import Tag
+from src.agent import sanitize
 from src.ingest.pdf_loader import load_pdf
 from src.ingest.tagger import (
     allowed_tags_for_document,
     default_tag_for_document,
     tag_for_heading,
 )
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,13 @@ def chunk_document(path: Path, fiscal_year: int, cfg: dict) -> list[Chunk]:
         text = _flush(buffer, min_chars)
         if text is not None:
             sequence += 1
+            # Scanned at ingest, not at query time. A passage carrying
+            # instructions is unsafe for every role, so it is marked once here
+            # and the gate drops it for everyone thereafter.
+            manoeuvres = sanitize.detect(text)
+            if manoeuvres:
+                log.warning("quarantined %s p.%d — injection patterns: %s",
+                            path.name, page, ", ".join(manoeuvres))
             chunks.append(Chunk(
                 id=f"{path.name}:p{page}:{sequence}",
                 text=text,
@@ -94,6 +105,7 @@ def chunk_document(path: Path, fiscal_year: int, cfg: dict) -> list[Chunk]:
                 locator=f"p.{page}",
                 fiscal_year=fiscal_year,
                 tag=current_tag,
+                quarantined=bool(manoeuvres),
             ))
         buffer = []
         buffer_chars = 0
@@ -137,7 +149,12 @@ def chunk_document(path: Path, fiscal_year: int, cfg: dict) -> list[Chunk]:
 
 
 def chunk_corpus(raw_dir: Path, cfg: dict) -> list[Chunk]:
-    """Chunk every PDF listed in the download manifest."""
+    """Chunk every PDF in the corpus: the real filings plus any fixtures.
+
+    Synthetic fixtures are ingested through exactly the same path as genuine
+    filings. A defence tested against a document that took a special route
+    proves nothing about the route attackers would actually use.
+    """
     import json
 
     manifest = json.loads((raw_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -145,4 +162,8 @@ def chunk_corpus(raw_dir: Path, cfg: dict) -> list[Chunk]:
     for entry in manifest:
         chunks += chunk_document(raw_dir / entry["pdf"],
                                  fiscal_year=entry["fiscal_year"], cfg=cfg)
+
+    for fixture in sorted((raw_dir / "_synthetic").glob("*.pdf")):
+        chunks += chunk_document(fixture, fiscal_year=cfg.get(
+            "synthetic_fiscal_year", 2025), cfg=cfg)
     return chunks
