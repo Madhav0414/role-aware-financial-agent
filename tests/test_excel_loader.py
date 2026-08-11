@@ -173,6 +173,25 @@ def test_xbrl_scaffolding_rows_never_become_metrics():
         assert "abstract" not in f.metric
 
 
+def test_csv_statements_load_through_the_same_path(tmp_path):
+    """The assignment names Excel/CSV. SEC publishes .xlsx so the corpus holds
+    no CSV, but the loader must handle one — header block, period columns and
+    category scoping all work identically once the file is a frame."""
+    csv = tmp_path / "quarterly.csv"
+    csv.write_text(
+        'CONSOLIDATED STATEMENTS OF OPERATIONS,'
+        '"12 Months Ended Sep. 27, 2025","12 Months Ended Sep. 28, 2024"\n'
+        'Net sales,"$ 416,161","$ 391,035"\n'
+        'Cost of sales,220960,210352\n',
+        encoding="utf-8")
+
+    facts = load_statement_workbook(csv)
+    by_key = {(f.metric, f.period): f.value for f in facts}
+
+    assert by_key[("net_sales", "FY2025")] == 416_161.0
+    assert by_key[("cost_of_sales", "FY2024")] == 210_352.0
+
+
 def test_malformed_workbook_is_skipped_not_fatal(tmp_path):
     """One unreadable sheet must never abort ingestion of the rest."""
     import pandas as pd

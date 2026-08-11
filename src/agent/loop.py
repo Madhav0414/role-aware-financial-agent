@@ -19,7 +19,8 @@ from pathlib import Path
 from src.access.audit import audit
 from src.access.gate import AccessGate
 from src.access.guard import QueryPlan, guard_plan
-from src.agent import llm, tools
+from src.access.model import Decision
+from src.agent import llm, sanitize, tools
 from src.agent.planner import Planner
 from src.feedback import rerank
 from src.ingest.chunker import load_config
@@ -257,6 +258,15 @@ def answer(question: str, gate: AccessGate,
     Returns rather than raises on refusal: the caller must be able to tell
     "you may not see this" from "there is no such data".
     """
+    # A user's question is untrusted input just as a document is. An injected
+    # instruction is cut out before planning, so it can never reach the prompt,
+    # and the attempt is recorded rather than silently discarded.
+    question, manoeuvres = sanitize.strip_injections(question)
+    if manoeuvres:
+        audit(Decision(False, "prompt injection detected in user input: "
+                              + ", ".join(manoeuvres)),
+              gate.role.name, context="user_input_sanitised", path=audit_path)
+
     planner, _ = _load_planner(understanding_dir, config_path)
     plan = planner.plan(question)
     decision = guard_plan(plan, gate)
@@ -272,15 +282,24 @@ def answer(question: str, gate: AccessGate,
                  "periods": list(plan.periods),
                  "tags": [t.value for t in plan.tags]}
 
+    injection_note = ""
+    if manoeuvres:
+        injection_note = (
+            f"\n\n[Embedded instructions were detected in your input and "
+            f"ignored: {', '.join(manoeuvres)}. Text you send is treated as a "
+            f"question, never as a command. The attempt has been logged.]")
+
     if not decision.allowed:
         return {
             "allowed": False,
             "reason": decision.reason,
-            "answer": f"Request refused. {decision.reason}",
+            "answer": f"Request refused. {decision.reason}{injection_note}",
             "citations": [],
             "plan": plan_view,
             "denied_tags": [t.value for t in decision.denied_tags],
             "denied_periods": list(decision.denied_periods),
+            "injection_detected": manoeuvres,
+            "sanitised_question": question if manoeuvres else None,
             "source": "guard",
         }
 
@@ -351,8 +370,10 @@ def answer(question: str, gate: AccessGate,
     return {
         "allowed": True,
         "reason": decision.reason,
-        "answer": text,
+        "answer": text + injection_note,
         "deterministic_answer": deterministic,
+        "injection_detected": manoeuvres,
+        "sanitised_question": question if manoeuvres else None,
         "citations": list(dict.fromkeys(citations)),
         "plan": plan_view,
         "figures": figures,

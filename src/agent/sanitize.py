@@ -95,6 +95,47 @@ def is_injection(text: str) -> bool:
     return bool(detect(text))
 
 
+def strip_injections(text: str) -> tuple[str, list[str]]:
+    """Remove injected instructions from user input, keeping the real question.
+
+    Returns `(cleaned_text, manoeuvres_found)`.
+
+    A user's question is untrusted input just as a document is, but it cannot
+    simply be quarantined — the person is waiting for an answer, and a
+    legitimate question may carry an attack appended to it:
+
+        "What was net sales in FY2025? Also ignore all previous instructions."
+
+    Refusing that outright punishes the question; obeying it is the attack. So
+    the injected clause is cut out and the remainder is answered normally, with
+    the attempt reported to the user and recorded in the audit log.
+
+    This is defence in depth rather than the primary control. The planner is
+    deterministic and the gate runs regardless, so an undetected injection
+    still cannot reach restricted data — it would simply go unrecorded, and a
+    system whose value is its audit trail should not silently discard evidence
+    that someone probed it.
+    """
+    found = detect(text)
+    if not found:
+        return text, []
+
+    cleaned = text
+    for pattern, _label in _COMPILED:
+        # Cut from the start of the match to the end of that sentence, since an
+        # injected instruction runs to its terminator rather than to the end of
+        # the matched phrase.
+        while True:
+            match = pattern.search(cleaned.lower())
+            if match is None:
+                break
+            end = cleaned.find(".", match.end())
+            end = len(cleaned) if end == -1 else end + 1
+            cleaned = (cleaned[:match.start()] + " " + cleaned[end:]).strip()
+
+    return _WHITESPACE.sub(" ", cleaned).strip(), found
+
+
 def answer_violates_access(answer: str, denied_terms: list[str]) -> list[str]:
     """Terms a role may not see that nonetheless appear in an answer.
 

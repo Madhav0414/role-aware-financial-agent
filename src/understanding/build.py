@@ -38,7 +38,10 @@ CONFIG = Path("config/sources.yaml")
 def collect_facts(raw_dir: Path = RAW) -> list[Fact]:
     """Every figure in the corpus, from both spreadsheet shapes."""
     facts: list[Fact] = []
-    for workbook in sorted(raw_dir.glob("*.xlsx")):
+    # Both tabular formats the assignment names. SEC publishes .xlsx, so that
+    # is what the corpus holds, but a .csv dropped into data/raw/ is ingested
+    # through exactly the same path.
+    for workbook in sorted([*raw_dir.glob("*.xlsx"), *raw_dir.glob("*.csv")]):
         facts += load_statement_workbook(workbook)
 
     synthetic = raw_dir / "_synthetic" / "headcount_by_department.xlsx"

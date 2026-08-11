@@ -220,10 +220,24 @@ def _tag_for_sheet(sheet_name: str) -> Tag:
     return Tag.FIN_STATEMENTS
 
 
+def _read_tabular(path: Path) -> dict[str, pd.DataFrame]:
+    """Load a workbook or a CSV into the same {sheet_name: frame} shape.
+
+    SEC publishes statement data as .xlsx, so that is what the committed corpus
+    contains. CSV is supported because the assignment names it alongside Excel
+    and a flat export is the obvious thing a client would hand over — the
+    header block, period columns and category scoping all work identically
+    once the file is a frame.
+    """
+    if path.suffix.lower() == ".csv":
+        return {path.stem: pd.read_csv(path, header=None, dtype=object)}
+    return pd.read_excel(path, sheet_name=None, header=None)
+
+
 def load_statement_workbook(path: Path) -> list[Fact]:
-    """Read every sheet of a statement workbook into Facts."""
+    """Read every sheet of a statement workbook — .xlsx or .csv — into Facts."""
     try:
-        sheets = pd.read_excel(path, sheet_name=None, header=None)
+        sheets = _read_tabular(path)
     except Exception as exc:  # noqa: BLE001 — an unreadable file is not fatal
         log.warning("could not open %s: %s", path.name, exc)
         return []
