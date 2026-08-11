@@ -27,6 +27,36 @@ from src.agent import interpreter
 _EXPLICIT_PERIOD = re.compile(r"\b(Q[1-4])?\s*(?:FY|fiscal(?:\s+year)?\s*)?(20\d{2})\b",
                               re.IGNORECASE)
 
+# "June 2025", "ending June 28, 2025", "quarter ended Jun 2025".
+_MONTH_YEAR = re.compile(
+    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*"
+    r"(?:\s+\d{1,2})?,?\s+(20\d{2})\b", re.IGNORECASE)
+
+_MONTH_NUM = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+              "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+
+# Phrases that mean a single quarter rather than a year.
+_QUARTER_CUES = ("3 months", "three months", "3-month", "three-month",
+                 "quarter", "quarterly", "q1", "q2", "q3", "q4")
+
+# Cumulative year-to-date periods. These are published in the 10-Qs but are
+# deliberately NOT ingested (a "9 Months Ended" column would file two different
+# meanings under one label), so a question asking for one must be told plainly
+# rather than answered with the annual figure.
+_YTD_CUES = ("6 months", "six months", "9 months", "nine months",
+             "year to date", "year-to-date", "ytd", "half year", "first half")
+
+# Apple's fiscal year ends in late September, so Q1 is Oct-Dec.
+_FY_ROLLOVER_MONTH = 10
+
+# Words describing WHEN rather than WHAT. Excluded from ignored-qualifier
+# detection, since the period parser already accounts for them.
+_PERIOD_WORDS = frozenset("""
+month months ending ended end quarter quarterly annual year years fiscal
+january february march april may june july august september october november
+december jan feb mar apr jun jul aug sep sept oct nov dec half date
+""".split())
+
 # Question shapes that ask for prose, never for a figure. "Who is the auditor"
 # once matched `auditor_location_auditor_firm_id` and answered "$42 million" —
 # the audit firm's registration number, rendered as dollars.
@@ -331,7 +361,39 @@ class Planner:
         annual periods — asking "how has revenue grown?" and receiving one
         number is not an answer to the question that was asked.
         """
-        periods = []
+        text = question.lower()
+        periods: list[str] = []
+
+        # A month named with a year identifies a QUARTER, not a year:
+        # "3 months ending June 2025" is Q3 FY2025, not FY2025. Reading only
+        # the year answered a quarterly question with the annual figure —
+        # $112,010M instead of $23,434M — which is a wrong answer that looks
+        # entirely right.
+        # Only when the question actually says "quarter" or "3 months". A bare
+        # month and year — "as of Sep 2023" — is usually a point in time within
+        # a fiscal year, and headcount is stated annually; converting it to
+        # Q4FY2023 asked for a figure that does not exist.
+        wants_quarter = any(cue in text for cue in _QUARTER_CUES)
+        for month, year in (_MONTH_YEAR.findall(question) if wants_quarter else []):
+            month_num = _MONTH_NUM[month.lower()[:3]]
+            fiscal_year = int(year) + 1 if month_num >= _FY_ROLLOVER_MONTH \
+                else int(year)
+            quarter = ((month_num - _FY_ROLLOVER_MONTH) % 12) // 3 + 1
+            label = f"Q{quarter}FY{fiscal_year}"
+            if label not in periods:
+                periods.append(label)
+
+        # A cumulative period the corpus does not hold. Naming it explicitly
+        # means the answer says so instead of silently substituting the year.
+        if any(cue in text for cue in _YTD_CUES) and not wants_quarter:
+            span = "9M" if ("9 month" in text or "nine month" in text) else "6M"
+            years = [y for _, y in _EXPLICIT_PERIOD.findall(question)]
+            return (f"{span}FY{years[0]}",) if years \
+                else (f"{span}FY{self.corpus_max_fy}",)
+
+        if periods:
+            return tuple(periods)
+
         for quarter, year in _EXPLICIT_PERIOD.findall(question):
             label = f"{quarter.upper().replace(' ', '')}FY{year}" if quarter \
                 else f"FY{year}"
@@ -469,7 +531,11 @@ class Planner:
         # the confidently-wrong failure this system exists to avoid.
         consumed = {w for _, alias in alias_hits for w in alias.split()}
         covered = consumed | {p for m in metrics for p in m.split("_")}
-        ignored = tuple(sorted(words - covered)) if metrics else ()
+        # Words that describe WHEN, not WHAT. They are already handled by the
+        # period parser, so treating them as dropped qualifiers attached a
+        # spurious "this is the consolidated figure" note to every quarterly
+        # question.
+        ignored = tuple(sorted(words - covered - _PERIOD_WORDS)) if metrics else ()
 
         return QueryPlan(intent=intent, metrics=metrics, periods=periods,
                          tags=tuple(tags), ignored_qualifiers=ignored)

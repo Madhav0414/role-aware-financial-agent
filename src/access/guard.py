@@ -23,7 +23,12 @@ from src.access.model import Decision, Tag
 
 # "FY2025" or "Q3FY2026" — a quarterly label carries a prefix, so the fiscal
 # year cannot simply be read off the last four characters.
-_PERIOD = re.compile(r"^(?:Q[1-4])?FY(\d{4})$", re.IGNORECASE)
+# "FY2025", "Q3FY2026", and the cumulative "9MFY2025" the corpus does not
+# hold. The cumulative form must PARSE so the time window can judge it —
+# otherwise it fails closed and reports "outside permitted period" to a role
+# that has no time restriction, which misdescribes the refusal. Whether the
+# figure exists is a separate question, answered by the facts lookup.
+_PERIOD = re.compile(r"^(?:Q[1-4]|[369]M)?FY(\d{4})$", re.IGNORECASE)
 
 
 class UnparseablePeriod(ValueError):
