@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import _bootstrap  # noqa: F401  -- fixes sys.path and the working directory
+
 OUT = Path("data/raw/_synthetic/headcount_by_department.xlsx")
 
 BANNER = "SYNTHETIC DATA - FABRICATED FOR RBAC DEMONSTRATION - NOT APPLE DATA"

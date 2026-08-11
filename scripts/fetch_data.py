@@ -33,6 +33,8 @@ import urllib.request
 from io import StringIO
 from pathlib import Path
 
+import _bootstrap  # noqa: F401  -- fixes sys.path and the working directory
+
 import pandas as pd
 
 # SEC asks that automated clients identify themselves with a contact address.

@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 import time
 
+import _bootstrap  # noqa: F401  -- fixes sys.path and the working directory
+
 from src.understanding.build import OUT, build_all
 
 

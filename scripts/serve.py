@@ -17,6 +17,8 @@ from pathlib import Path
 
 import uvicorn
 
+import _bootstrap  # noqa: F401  -- fixes sys.path and the working directory
+
 UNDERSTANDING = Path("data/understanding")
 
 

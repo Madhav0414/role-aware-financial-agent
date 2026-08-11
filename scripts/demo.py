@@ -23,6 +23,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import _bootstrap  # noqa: F401  -- fixes sys.path and the working directory
+
 from src.access.gate import AccessGate
 from src.access.model import load_roles
 from src.agent.loop import answer, build_context
