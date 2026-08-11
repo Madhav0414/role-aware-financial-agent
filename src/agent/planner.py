@@ -26,9 +26,15 @@ from src.access.model import Tag
 _EXPLICIT_PERIOD = re.compile(r"\b(Q[1-4])?\s*(?:FY|fiscal(?:\s+year)?\s*)?(20\d{2})\b",
                               re.IGNORECASE)
 
+# Question shapes that ask for prose, never for a figure. "Who is the auditor"
+# once matched `auditor_location_auditor_firm_id` and answered "$42 million" —
+# the audit firm's registration number, rendered as dollars.
 _NARRATIVE_CUES = ("why", "explain", "describe", "what does", "what did",
                    "management say", "discuss", "outlook", "how does",
-                   "tell me about", "summar")
+                   "tell me about", "summar",
+                   "who is", "who are", "who was", "who were",
+                   "where is", "where are", "where was", "where were",
+                   "headquarter", "located", "location")
 
 # Words carried by almost every question. Left in, they would let a metric
 # whose name contains "total" or "the" match anything.
@@ -392,8 +398,15 @@ class Planner:
             intent = "mixed"
         elif metrics and not wants_narrative:
             intent = "metric"
-        else:
+        elif wants_narrative_prose or topic:
+            # The question asked for prose and said so — "where is", "who is",
+            # "what does management say". Its answer is a passage, and should
+            # not be presented with an apology attached.
             intent = "narrative"
+        else:
+            # Nothing recognised: no metric, no topic, no narrative cue. The
+            # answer is whatever came closest, and the caller should say so.
+            intent = "unknown"
 
         return QueryPlan(intent=intent, metrics=metrics, periods=periods,
                          tags=tuple(tags))

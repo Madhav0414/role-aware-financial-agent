@@ -252,6 +252,50 @@ def test_a_bare_alias_still_wins_on_a_one_word_question():
         == ["net_sales"]
 
 
+def test_singular_and_plural_forms_match():
+    """The filing says "headquarters"; a user types "headquarter". Exact
+    matching scored that term at zero and the search fell through to whatever
+    else the question mentioned."""
+    result = ask_ceo("where was companys headquarter in 2023")
+
+    assert "Cupertino" in result["answer"]
+    assert "10-K_FY2023" in result["citations"][0]
+
+
+def test_the_excerpt_shows_the_matching_sentence():
+    """Chunks run to ~1,800 characters and the answer can sit anywhere inside.
+    Showing the opening returned "Board of Directors, and the Company's
+    share..." while the Cupertino sentence sat 560 characters further down —
+    retrieval was right and the excerpt hid it."""
+    result = ask_ceo("Where is the company headquarters?")
+    assert "headquarters is located in Cupertino" in result["answer"]
+
+
+def test_a_who_question_does_not_return_a_number():
+    """"Who is the auditor" matched `auditor_location_auditor_firm_id` and
+    answered "$42 million" — the audit firm's registration number, rendered as
+    dollars."""
+    result = ask_ceo("who is the auditor")
+
+    assert result["plan"]["metrics"] == []
+    assert "$42" not in result["answer"]
+
+
+def test_a_recognised_narrative_question_is_not_hedged():
+    """It asked for prose and said so. Answering correctly and then apologising
+    for it reads as a failure."""
+    result = ask_ceo("Where is the company headquarters?")
+    assert result["answer"].startswith("From the filings")
+
+
+def test_an_unrecognised_question_is_still_hedged():
+    """The control for the rule above — "market valuation" names no metric, no
+    topic and no narrative form, so whatever comes closest must be labelled as
+    a guess."""
+    result = ask_ceo("What is the market valuation?")
+    assert "does not match" in result["answer"]
+
+
 def test_narrative_questions_do_not_hunt_for_metrics():
     """"Risk factors" reaches a concentration-risk footnote if the vocabulary
     is searched, and answering with that number is worse than answering with

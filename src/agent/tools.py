@@ -98,6 +98,10 @@ def search_filings(question: str, *, gate: AccessGate, k: int = 5,
           path=audit_path)
     return _envelope(True, decision.reason,
                      rows=[{"id": chunk.id, "text": chunk.text,
+                            # The snippet is computed here because this is
+                            # where both the index (which knows term rarity)
+                            # and the question are available.
+                            "snippet": index.snippet(chunk, question),
                             "citation": f"{chunk.source} {chunk.locator}",
                             "tag": chunk.tag.value, "score": round(score, 3)}
                            for chunk, score in hits],

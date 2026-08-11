@@ -1509,3 +1509,86 @@ purpose.
 
 **REJECTED** — Trusting whichever match scored higher. Scores compare badly
 across a hand-curated mapping and a mechanical one.
+
+---
+
+## Part 18 — Narrative retrieval quality
+
+### D83 · Plurals are folded, with one rule rather than a stemmer
+
+**WHY** — Asked *"where was the company's headquarter in 2023"*, the system
+returned a revenue table. The filing says "headquarters"; the question said
+"headquarter". Exact matching scored the only meaningful term at **zero**, so
+the search fell through to whatever else the question mentioned.
+
+**HOW** — Strip a trailing "s" from words longer than three characters unless
+they end in "ss", applied identically when building the index and when
+searching it.
+
+It does mangle words — "analysis" becomes "analysi" — and that is harmless
+precisely because both sides are folded: the document and the query produce the
+same key, and the key is internal. **Retrieval needs the two sides to agree,
+not to be linguistically correct.**
+
+**REJECTED** — Porter stemming. It folds "capitalised" to "capital" and
+"reserves" to "reserve", and in financial text those are different things.
+
+---
+
+### D84 · The excerpt is anchored on the rarest matching term ⭐
+
+**WHY** — The retrieval was right all along. 10-K FY2023 p.26 ranked first and
+contained *"The Company's headquarters is located in Cupertino, California"* —
+at character 564 of a 1,014-character chunk. Showing the opening 500 characters
+displayed "Board of Directors, and the Company's share…" instead. **A correct
+answer, hidden by how it was displayed.**
+
+Two attempts failed before this one, and both are instructive:
+
+- Scoring windows by *how many* query terms they contain let "company", "was"
+  and "2023" outvote "headquarter" — the one word that mattered. Term count is
+  the wrong measure.
+- Scoring by summed IDF was better but still lost, because "where" appears in
+  only 39 of 737 chunks so IDF rates it as informative. It is grammar, not
+  meaning, so question words are now excluded from snippet selection.
+- Even with correct scoring, the winning window *contained* the sentence — in
+  its final 48 characters, where a reader never sees it.
+
+**HOW** — Find the rarest query term present in the passage and centre the
+excerpt on it. The rare term is why the passage was retrieved, so it belongs in
+the middle. Computed inside `BM25Index.snippet()`, because that is where term
+rarity is known.
+
+**REJECTED** — Showing the whole chunk. Correct and unreadable; 1,800
+characters of filing prose per result.
+
+---
+
+### D85 · "Who is" and "where is" never search for a metric
+
+**WHY** — *"Who is the auditor"* matched `auditor_location_auditor_firm_id` and
+answered **"$42 million"** — the audit firm's registration number, rendered as
+dollars. The vocabulary matcher found a metric name containing "auditor" and
+the unit inference had no reason to doubt it.
+
+**HOW** — Interrogative forms asking for an entity or a place are narrative
+cues, so the metric vocabulary is not searched at all for them.
+
+**REJECTED** — Filtering out identifier-like metrics by name. It would fix
+"firm id" and miss the next one; the question form is the reliable signal.
+
+---
+
+### D86 · A recognised narrative question is not hedged
+
+**WHY** — After the fixes above, the headquarters question returned the right
+passage prefixed with *"this may not answer the question"*. Answering correctly
+and then apologising for it reads as a failure.
+
+**HOW** — The plan now distinguishes `narrative` (the question asked for prose
+and said so — a topic tag or an interrogative form) from `unknown` (nothing
+matched at all). Only `unknown` is hedged. A test asserts "market valuation"
+still is, so the honesty of `D66` survives.
+
+**REJECTED** — Hedging on a confidence score. Score thresholds are corpus- and
+query-dependent; the question's own form is a stable signal.

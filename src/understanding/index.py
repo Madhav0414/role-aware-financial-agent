@@ -39,15 +39,52 @@ B = 0.75
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 
+# Words that carry question grammar rather than meaning. They are kept for
+# SCORING — BM25's IDF already discounts them — but excluded when choosing
+# which part of a passage to show. "Where" appears in only 39 of 737 chunks, so
+# IDF rates it as informative, and a window containing "where/was/company/2023"
+# then outscored the one containing "headquarter". Grammar should not decide
+# which sentence a reader is shown.
+_SNIPPET_STOPWORDS = frozenset("""
+what where when who why which how was were is are be been the a an of in for to
+and or that this these those it its their our we you they i do does did has
+have had can could would should may might will shall about with from as at by
+on into over under more most much many any some all such other than then there
+here company companys apple year years fiscal quarter tell show give me my
+""".split())
+
+
+def _fold(token: str) -> str:
+    """Normalise a token so singular and plural forms match.
+
+    Found by asking "where was the company's headquarter in 2023". The filing
+    says "headquarters"; the question said "headquarter". Exact matching scored
+    that term at zero, so the search fell through to whatever else the question
+    mentioned and returned a revenue table.
+
+    ONE rule, not a stemmer. Porter stemming would fold "capitalised" to
+    "capital" and "reserves" to "reserve", and in financial text those are
+    different things. This handles the plural/possessive mismatch that actually
+    breaks queries and leaves everything else alone.
+
+    It does mangle some words — "analysis" becomes "analysi". That is harmless
+    because the same fold is applied when building the index and when searching
+    it: both sides agree, and the folded form is an internal key nobody sees.
+    Retrieval needs consistency, not linguistic correctness.
+    """
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase alphanumeric runs.
+    """Lowercase alphanumeric runs, with plurals folded.
 
-    Deliberately simple, and it keeps digits: "2025" and "166" are exactly the
-    tokens that make a financial query specific, so stripping numbers would
-    remove the most discriminating terms in the corpus.
+    Digits are kept: "2025" and "166" are exactly the tokens that make a
+    financial query specific, so stripping numbers would remove the most
+    discriminating terms in the corpus.
     """
-    return _TOKEN.findall(text.lower())
+    return [_fold(token) for token in _TOKEN.findall(text.lower())]
 
 
 class BM25Index:
@@ -76,6 +113,54 @@ class BM25Index:
         n = len(self.chunks)
         df = self.doc_freq.get(term, 0)
         return math.log((n - df + 0.5) / (df + 0.5) + 1.0)
+
+    def snippet(self, chunk: Chunk, query: str, width: int = 460) -> str:
+        """The part of a passage that actually answers the question.
+
+        Chunks run to ~1,800 characters and the matching sentence can sit
+        anywhere inside, so showing the opening returned "Board of Directors,
+        and the Company's share..." for a question about the headquarters while
+        the Cupertino sentence sat 560 characters further down.
+
+        Windows are scored by the summed IDF of the distinct query terms they
+        contain — not by how many. Counting terms lets "company", "was" and
+        "2023" outvote "headquarter", which is the one word that matters:
+        "company" appears in 519 of 737 chunks and "headquarter" in 3.
+        """
+        flat = " ".join(chunk.text.split())
+        if len(flat) <= width:
+            return flat
+
+        terms = {t for t in tokenize(query)
+                 if len(t) > 2 and t not in _SNIPPET_STOPWORDS}
+        if not terms:
+            return flat[:width]
+
+        # Centre the excerpt on the RAREST matching term rather than sliding a
+        # window and taking the best-scoring one. Sliding produced a window
+        # that technically contained "headquarters" — in its final 48
+        # characters, where a reader never sees it. The rare term is the reason
+        # this passage was retrieved, so it belongs in the middle.
+        anchor, best_idf = None, 0.0
+        lowered = flat.lower()
+        for term in terms:
+            position = lowered.find(term)
+            if position == -1:
+                continue
+            idf = self._idf(term)
+            if idf > best_idf:
+                anchor, best_idf = position, idf
+
+        if anchor is None:
+            return flat[:width]
+
+        start = max(0, anchor - width // 3)
+        text = flat[start:start + width]
+        if start > 0:
+            cut = text.find(" ")          # open at a word boundary
+            text = text[cut + 1:] if cut != -1 else text
+            return f"…{text}"
+        return text
 
     def search(self, query: str, gate: AccessGate,
                k: int = 5) -> list[tuple[Chunk, float]]:

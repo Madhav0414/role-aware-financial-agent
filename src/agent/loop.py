@@ -60,6 +60,18 @@ def _label(metric: str) -> str:
                  .replace("_", " ").strip().capitalize()
 
 
+def _excerpt(row: dict, question: str, width: int = 460) -> str:
+    """The part of a retrieved passage worth showing.
+
+    `search_filings` computes this against the index, which knows how rare each
+    term is — the opening of a chunk is often not the part that matched. The
+    fallback here only runs for callers that supply passages directly.
+    """
+    if row.get("snippet"):
+        return row["snippet"]
+    return " ".join(row["text"].split())[:width]
+
+
 def _sort_periods(periods: list[str]) -> list[str]:
     """Chronological order. 'Q3FY2026' sorts after 'Q1FY2026' after 'FY2025'."""
     def key(label: str) -> tuple[int, int]:
@@ -158,7 +170,8 @@ def build_context(question: str, gate: AccessGate,
 def _compose_deterministic(figures: list[dict], passages: list[dict],
                            plan: QueryPlan,
                            suggestions: list[str] | None = None,
-                           available: list[str] | None = None) -> str:
+                           available: list[str] | None = None,
+                           question: str = "") -> str:
     """Word the answer without a model.
 
     This is the keyless path, and it is also the fallback whenever the model is
@@ -213,24 +226,23 @@ def _compose_deterministic(figures: list[dict], passages: list[dict],
     # worth showing at all, rather than presenting the least-bad passage.
     relevant = [p for p in passages if p.get("score", 0) >= MIN_RELEVANCE]
 
-    # A plan with topic tags means the question was ABOUT something this corpus
-    # covers — risk, governance, management commentary. Those are first-class
-    # questions answered from narrative, not failed metric lookups, so they
-    # must not be prefixed with an apology.
-    recognised_topic = bool(plan.tags)
+    # The question was recognised as asking for prose — either it named a topic
+    # this corpus covers, or it used a narrative form like "where is" / "who
+    # is". Those are first-class questions answered from narrative, not failed
+    # metric lookups, so they must not be prefixed with an apology.
+    recognised_topic = bool(plan.tags) or plan.intent == "narrative"
 
     if relevant and recognised_topic:
         top = relevant[0]
-        excerpt = " ".join(top["text"].split())[:520]
-        return f"From the filings ({top['citation']}):\n\n{excerpt}…"
+        return (f"From the filings ({top['citation']}):\n\n"
+                f"{_excerpt(top, question)}…")
 
     if relevant:
         top = relevant[0]
-        excerpt = " ".join(top["text"].split())[:420]
-        return ("That does not match a reported figure or a section of these "
-                "filings, so this is only the closest passage found "
+        return ("That does not match a reported figure or a named section of "
+                "these filings, so this is the closest passage found "
                 f"({top['citation']}). It may not answer the question:\n\n"
-                f"{excerpt}…")
+                f"{_excerpt(top, question)}…")
 
     message = ("I could not find anything in these filings that answers that "
                "question.")
@@ -349,7 +361,7 @@ def answer(question: str, gate: AccessGate,
             plan_view["periods"] = [newest]
 
     deterministic = _compose_deterministic(figures, passages, plan,
-                                           suggestions, available)
+                                           suggestions, available, question)
     text, source = deterministic, "deterministic"
 
     if use_llm:
