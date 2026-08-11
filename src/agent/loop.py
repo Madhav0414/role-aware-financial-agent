@@ -310,6 +310,25 @@ def answer(question: str, gate: AccessGate,
                                     list(plan.metrics)) \
         if plan.metrics and not figures else []
 
+    # The user named no period and the default turned out to hold nothing —
+    # the newest fiscal year in the corpus can be a partial year covered only
+    # by quarterly filings, so "revenue" defaulted to a year with no annual
+    # figure. Retry with the newest period this metric actually has.
+    #
+    # Only ever done for a DEFAULTED period. Substituting a year the user
+    # explicitly asked for would answer a different question than the one
+    # asked, which is worse than admitting the gap.
+    if available and not planner.has_explicit_period(question):
+        newest = available[0]
+        retried = tools.query_metrics(list(plan.metrics), [newest], gate=gate,
+                                      understanding_dir=understanding_dir,
+                                      audit_path=audit_path)["rows"]
+        if retried:
+            figures, available = retried, []
+            plan = QueryPlan(intent=plan.intent, metrics=plan.metrics,
+                             periods=(newest,), tags=plan.tags)
+            plan_view["periods"] = [newest]
+
     deterministic = _compose_deterministic(figures, passages, plan,
                                            suggestions, available)
     text, source = deterministic, "deterministic"

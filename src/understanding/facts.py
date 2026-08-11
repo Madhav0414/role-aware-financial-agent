@@ -51,6 +51,13 @@ class Fact:
         earnings per share is dollars, share counts are thousands of shares.
         """
         if self.unit == "USD_M":
+            # Cash-flow lines are stored with the sign the statement uses, so
+            # an outflow such as share repurchases is negative. "$-90,711
+            # million" reads as a typo; parentheses are the standard notation
+            # for a negative amount in financial reporting and are read
+            # correctly by anyone the answer is aimed at.
+            if self.value < 0:
+                return f"$({abs(self.value):,.0f}) million"
             return f"${self.value:,.0f} million"
         if self.unit == "USD_PER_SHARE":
             return f"${self.value:,.2f} per share"

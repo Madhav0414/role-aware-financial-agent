@@ -106,6 +106,15 @@ class Planner:
         scored.sort()
         return [metric for _, metric in scored[:limit]]
 
+    def has_explicit_period(self, question: str) -> bool:
+        """Did the user actually name a period, or did the planner default one?
+
+        A defaulted period may be wrong — the newest fiscal year in the corpus
+        can be a partial year covered only by quarterly filings — so the caller
+        needs to know whether it is safe to substitute a better one.
+        """
+        return bool(_EXPLICIT_PERIOD.search(question))
+
     def wants_comparison(self, question: str) -> bool:
         """Does the question ask how something CHANGED rather than what it was?"""
         text = f" {question.lower()} "

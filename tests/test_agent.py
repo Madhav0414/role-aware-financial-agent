@@ -312,6 +312,54 @@ def test_a_recognised_metric_with_no_data_says_which_periods_exist():
     assert "tariff" not in result["answer"].lower()
 
 
+def test_a_defaulted_period_falls_back_to_one_with_data():
+    """Asking just "revenue" defaulted to the newest fiscal year in the corpus
+    — which is a PARTIAL year covered only by quarterly filings, so it held no
+    annual figure and the answer was "I do not hold Net sales for FY2026"."""
+    result = ask_ceo("revenue")
+
+    assert result["figures"], "a bare metric question should still answer"
+    assert "416,161" in result["answer"]
+    assert result["plan"]["periods"] == ["FY2025"]
+
+
+def test_an_explicitly_named_period_is_never_substituted():
+    """The fallback applies only to a period the planner chose. Silently
+    answering about FY2025 when the user asked about FY2026 would answer a
+    different question than the one asked."""
+    result = ask_ceo("What was net sales in FY2026?")
+
+    assert result["figures"] == []
+    assert "do not hold" in result["answer"]
+    assert "FY2026" in result["answer"]
+
+
+def test_negative_amounts_use_accounting_notation():
+    """Cash-flow lines carry the sign the statement uses, so share repurchases
+    are negative. "$-90,711 million" reads as a typo."""
+    result = ask_ceo("How much was spent on share repurchases in FY2025?")
+
+    assert "$(90,711) million" in result["answer"]
+    assert "$-90,711" not in result["answer"]
+
+
+@pytest.mark.parametrize("question,expected_metric", [
+    ("What was Wearables revenue in FY2025?", "wearables"),
+    ("What was Asia Pacific revenue in FY2024?", "asia_pacific"),
+    ("What was Greater China revenue in FY2024?", "greater_china"),
+])
+def test_region_and_product_questions_match_one_metric(question,
+                                                       expected_metric):
+    """Consuming "wearables" left "revenue" behind, which then matched
+    net_sales — so one question produced two metrics and the answer reported a
+    ratio nobody asked for."""
+    result = ask_ceo(question)
+
+    assert len(result["plan"]["metrics"]) == 1
+    assert expected_metric in result["plan"]["metrics"][0]
+    assert "ratio" not in result["answer"]
+
+
 def test_the_quarter_that_does_exist_still_answers():
     """The control: FY2026 has no annual figure, but its quarters do."""
     result = ask_ceo("What was net income in Q3FY2026?")

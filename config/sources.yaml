@@ -166,9 +166,11 @@ metric_aliases:
   mac_net_sales: ["mac revenue", "mac sales"]
   ipad_net_sales: ["ipad revenue", "ipad sales", "ipad"]
   wearables_home_and_accessories_net_sales:
-    ["wearables", "wearables home and accessories", "accessories revenue"]
-  services_net_sales: ["services revenue", "services sales",
-                       "services net sales"]
+    ["wearables home and accessories net sales", "wearables net sales",
+     "wearables revenue", "wearables sales", "accessories revenue",
+     "wearables"]
+  services_net_sales: ["services net sales", "services revenue",
+                       "services sales"]
 
   # --- geography ---
   # The longer combined phrases are listed explicitly. Without them, matching
@@ -185,6 +187,9 @@ metric_aliases:
                             "china"]
   japan_net_sales: ["japan net sales", "japan revenue", "japan sales", "japan"]
   rest_of_asia_pacific_net_sales: ["rest of asia pacific net sales",
+                                   "rest of asia pacific revenue",
+                                   "asia pacific net sales",
+                                   "asia pacific revenue", "asia pacific sales",
                                    "rest of asia pacific", "asia pacific",
                                    "asia"]
 
