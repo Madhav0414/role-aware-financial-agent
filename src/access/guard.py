@@ -46,10 +46,16 @@ class QueryPlan:
     same object.
     """
 
-    intent: str                    # "metric" | "narrative" | "mixed"
+    intent: str                    # "metric" | "narrative" | "mixed" | "unknown"
     metrics: tuple[str, ...]
     periods: tuple[str, ...]
     tags: tuple[Tag, ...]
+
+    # Words the question used to narrow the request that the chosen metric does
+    # NOT account for — asking for "gross margin for products" when only the
+    # consolidated gross margin is stored. Carried so the answer can say the
+    # qualifier was dropped instead of silently answering a broader question.
+    ignored_qualifiers: tuple[str, ...] = ()
 
 
 def guard_plan(plan: QueryPlan, gate: AccessGate) -> Decision:

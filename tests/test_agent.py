@@ -252,6 +252,41 @@ def test_a_bare_alias_still_wins_on_a_one_word_question():
         == ["net_sales"]
 
 
+def test_an_ignored_qualifier_is_declared():
+    """Reported from the console: "gross margin for products in 2021" returned
+    152,836 — the CONSOLIDATED figure. Products gross margin was 105,126, and
+    that split lives in a narrative table in the 10-K's MD&A, not in the
+    statement workbooks.
+
+    Answering with the total and saying nothing is the confidently-wrong
+    failure: the question was narrowed and the system silently widened it back.
+    """
+    result = ask_ceo("what was gross margin for products in 2021")
+
+    assert result["plan"]["ignored_qualifiers"] == ["products"]
+    assert "152,836" in result["answer"]
+    assert "consolidated figure" in result["answer"]
+    assert "products" in result["answer"]
+
+
+def test_no_note_when_nothing_was_ignored():
+    """The control. A qualifier warning on every answer would be noise."""
+    result = ask_ceo("what was gross margin in 2021")
+
+    assert result["plan"]["ignored_qualifiers"] == []
+    assert "consolidated figure" not in result["answer"]
+
+
+def test_a_single_incidental_word_does_not_match_a_metric():
+    """"How big is the team these days" reduces to {"days"} and matched
+    `maturities_greater_than_90_days_repayments_of_commercial_paper` — one
+    incidental word producing a confident, unrelated figure."""
+    result = ask_ceo("how big is the team these days")
+
+    assert result["plan"]["metrics"] == []
+    assert "maturities" not in result["answer"]
+
+
 def test_singular_and_plural_forms_match():
     """The filing says "headquarters"; a user types "headquarter". Exact
     matching scored that term at zero and the search fell through to whatever

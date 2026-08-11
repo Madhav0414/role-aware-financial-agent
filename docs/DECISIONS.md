@@ -1592,3 +1592,86 @@ still is, so the honesty of `D66` survives.
 
 **REJECTED** — Hedging on a confidence score. Score thresholds are corpus- and
 query-dependent; the question's own form is a stable signal.
+
+---
+
+## Part 19 — Understanding phrasing, not just words
+
+### D87 · An ignored qualifier is declared, not swallowed ⭐
+
+**WHY** — Reported from the console: *"what was gross margin for products in
+2021"* returned **$152,836 million**. That is the *consolidated* gross margin.
+Products gross margin was **$105,126 million**.
+
+The split exists in the 10-K, in a table inside the MD&A prose — which the
+system indexes as text but does not extract as figures. So there was no
+`products_gross_margin` to find, the two-word alias "gross margin" matched, and
+the word "products" was **silently dropped**. The question was narrowed and the
+system quietly widened it back.
+
+**HOW** — The plan now records `ignored_qualifiers`: words the question used to
+narrow the request that the chosen metric does not account for. When present,
+the answer says so — *"this is the consolidated figure; these filings do not
+report gross margin broken down by products in their statement tables."*
+
+Generic by construction: it needs no knowledge of gross margin, and catches the
+same class of mistake for any metric and any qualifier.
+
+**REJECTED** — Extracting MD&A tables from the PDF. It is the better fix and a
+much larger one; naming the limitation precisely is worth more than a partial
+table parser built in the remaining time.
+
+---
+
+### D88 · A one-word question must name almost the whole metric
+
+**WHY** — Found while fixing the above. *"How big is the team these days"*
+reduced to the single content word `{"days"}`, which matched
+`maturities_greater_than_90_days_repayments_of_commercial_paper`. One
+incidental word produced a confident, entirely unrelated figure.
+
+**HOW** — When a question supplies only one content word, the matched metric
+may have at most two unaccounted-for words left. "Inventories" reaching
+`current_assets_inventories` passes — only the section prefix is left over —
+while "days" reaching an eight-word commercial-paper metric does not.
+
+**REJECTED** — Requiring two content words always. It would break "inventories"
+and "headcount", which are complete questions on their own.
+
+---
+
+### D89 · The model proposes metrics; it never decides access ⭐
+
+**WHY** — The real limit of keyword matching, and it cannot be fixed by more
+keywords: people paraphrase. *"How profitable were we last year"* shares no
+word with `net_income`, and no alias list ever written will survive that.
+Understanding phrasing is the one thing a language model is genuinely better
+at than a rule.
+
+**HOW** — When the deterministic path finds nothing, the model is shown a
+shortlist of real metric names and asked to pick. Four constraints make it safe
+to be wrong:
+
+1. **Every name is checked against the real vocabulary** and dropped if absent,
+   so a hallucination cannot become a query.
+2. **Tags still come from `metric_tags.json`**, never from the model, so a
+   proposal cannot under-declare what it touches.
+3. **The guard still runs** in ordinary Python on the resulting plan.
+4. **It is consulted only when keyword matching found nothing**, so a certain
+   match is never second-guessed by a slower, less predictable one.
+
+The worst a confused or manipulated model can do is propose a metric the user
+may not see — which the guard refuses exactly as it refuses a keyword-matched
+one. A test asserts precisely that: a model proposing `headcount` for a CTO
+still produces a refusal.
+
+**Understanding is widened; the security boundary is untouched.** That is what
+"LLM at the edge" means in practice.
+
+Note the shortlist ranks by word overlap but never *filters* by it — an earlier
+version did, and returned nothing for exactly the paraphrases the feature
+exists to handle.
+
+**REJECTED** — Letting the model emit the whole query plan including tags and
+periods. It would put the security-relevant fields under model control, and
+every guarantee in this system rests on them being computed, not generated.

@@ -207,6 +207,16 @@ def _compose_deterministic(figures: list[dict], passages: list[dict],
                      f"{row['display']}.")
 
     if figures:
+        # The question narrowed the request in a way the stored metric does not
+        # reflect. Say so — answering "gross margin for products" with the
+        # consolidated figure and staying silent is worse than the figure is
+        # useful.
+        if plan.ignored_qualifiers:
+            qualifiers = ", ".join(plan.ignored_qualifiers)
+            lines.append(
+                f"Note: this is the consolidated figure — these filings do not "
+                f"report {_label(figures[0]['metric']).lower()} broken down by "
+                f"{qualifiers} in their statement tables.")
         return " ".join(lines)
 
     # The metric was recognised but the requested period holds nothing. This is
@@ -280,7 +290,7 @@ def answer(question: str, gate: AccessGate,
               gate.role.name, context="user_input_sanitised", path=audit_path)
 
     planner, _ = _load_planner(understanding_dir, config_path)
-    plan = planner.plan(question)
+    plan = planner.plan(question, use_llm=use_llm)
     decision = guard_plan(plan, gate)
 
     # Logged before the branch, so a refusal is recorded exactly like an allow.
@@ -292,7 +302,8 @@ def answer(question: str, gate: AccessGate,
 
     plan_view = {"intent": plan.intent, "metrics": list(plan.metrics),
                  "periods": list(plan.periods),
-                 "tags": [t.value for t in plan.tags]}
+                 "tags": [t.value for t in plan.tags],
+                 "ignored_qualifiers": list(plan.ignored_qualifiers)}
 
     injection_note = ""
     if manoeuvres:

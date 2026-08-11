@@ -21,6 +21,7 @@ from pathlib import Path
 
 from src.access.guard import QueryPlan
 from src.access.model import Tag
+from src.agent import interpreter
 
 # "FY2025", "Q3FY2026", "fiscal 2024", or a bare "2024".
 _EXPLICIT_PERIOD = re.compile(r"\b(Q[1-4])?\s*(?:FY|fiscal(?:\s+year)?\s*)?(20\d{2})\b",
@@ -55,6 +56,13 @@ the and of in for to a an total net gross value amount
 # for.
 _RATIO_CUES = (" per ", "ratio", "divided by", "per employee", "per share",
                "compared to each", "relative to")
+
+
+# How much of a metric name may be left unaccounted for when the question
+# supplied only one word. Two allows a section prefix like
+# `current_assets_inventories`; more admits footnote metrics that merely happen
+# to contain the word.
+_MAX_EXTRA_FOR_ONE_WORD = 2
 
 
 def _coverage(metric: str, words: set[str]) -> int:
@@ -191,7 +199,22 @@ class Planner:
         # the least distinctive word and try again — the rarest words carry the
         # meaning.
         exact = self._metrics_containing(words)
-        if exact or len(words) < 2:
+
+        # A single word is thin evidence. "How big is the team these days"
+        # reduces to {"days"} and matched
+        # `maturities_greater_than_90_days_repayments_of_commercial_paper` —
+        # one incidental word producing a confident, unrelated figure.
+        #
+        # So a one-word question must name essentially the WHOLE metric:
+        # "inventories" reaching `current_assets_inventories` is fine, because
+        # only the section prefix is left over.
+        if len(words) < 2:
+            return tuple(m for m in exact
+                         if len({p for p in m.split("_")
+                                 if len(p) > 2 and p not in _METRIC_NOISE}
+                                - words) <= _MAX_EXTRA_FOR_ONE_WORD)
+
+        if exact:
             return exact
 
         # A word can exist in the vocabulary and still be the wrong one to
@@ -333,7 +356,7 @@ class Planner:
 
     # -- the plan ----------------------------------------------------------
 
-    def plan(self, question: str) -> QueryPlan:
+    def plan(self, question: str, use_llm: bool = False) -> QueryPlan:
         alias_hits = self._alias_hits(question)
         aliased = tuple(metric for metric, _ in alias_hits)
         words = self.content_words(question)
@@ -373,6 +396,24 @@ class Planner:
                 and _coverage(vocabulary[0], words) > _coverage(aliased[0], words):
             metrics = vocabulary
 
+        # Keyword matching cannot cover paraphrase: "how profitable were we"
+        # names no metric, and no alias list ever will. Ask the model only when
+        # the deterministic path found nothing — it is the slow, optional step,
+        # and it must never override a match that was already certain.
+        #
+        # Its proposals are filtered against the real vocabulary, their tags
+        # still come from config, and the guard still runs. The model widens
+        # understanding without touching the security boundary.
+        if use_llm and not metrics and not wants_narrative_prose:
+            # Ordered by how often each metric is reported, so when the
+            # question shares no words with any name the model is still shown
+            # the headline figures rather than an alphabetical slice of
+            # footnotes.
+            by_importance = sorted(
+                self.metric_tags,
+                key=lambda m: (-self.metric_counts.get(m, 0), len(m), m))
+            metrics = interpreter.propose_metrics(question, by_importance)
+
         # Several metrics only make sense together when the question asks for a
         # RELATIONSHIP. Without a cue like "per", reporting a ratio between two
         # loosely-matched metrics produces arithmetic nobody asked for.
@@ -408,5 +449,15 @@ class Planner:
             # answer is whatever came closest, and the caller should say so.
             intent = "unknown"
 
+        # Words the question used to narrow the request that the chosen metric
+        # does not account for. Asking "gross margin for products" matches the
+        # two-word alias and returns the CONSOLIDATED gross margin — the split
+        # by product line lives in the 10-K's narrative table and was never
+        # extracted as a figure. Answering with the total and saying nothing is
+        # the confidently-wrong failure this system exists to avoid.
+        consumed = {w for _, alias in alias_hits for w in alias.split()}
+        covered = consumed | {p for m in metrics for p in m.split("_")}
+        ignored = tuple(sorted(words - covered)) if metrics else ()
+
         return QueryPlan(intent=intent, metrics=metrics, periods=periods,
-                         tags=tuple(tags))
+                         tags=tuple(tags), ignored_qualifiers=ignored)
