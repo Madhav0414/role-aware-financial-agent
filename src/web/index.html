@@ -6,262 +6,313 @@
 <title>Financial Data Agent — Access Console</title>
 <style>
 /* ═══════════════════════════════════════════════════════════════════════
-   DESIGN NOTES
+   A private-banking terminal, not a chat product.
 
-   A financial instrument that reads like a well-set document, not a
-   dashboard. Three commitments:
+   Structure: a THREAD. Question, then its answer directly beneath, then
+   the next exchange. Everything about one question stays in one block —
+   verdict, pipeline, figure, evidence, feedback — so nothing has to be
+   correlated across the screen.
 
-   1. FIGURES ARE THE HERO. Set large, in serif, the way printed financial
-      statements set them. The number is what the user came for.
-   2. THE REFUSAL IS VISIBLE AS A STOPPED PROCESS. The pipeline ribbon
-      fills, then halts mid-run with the remaining stages greyed. You can
-      see that nothing downstream happened.
-   3. MOTION MEANS SOMETHING. Stages stagger in the order they execute;
-      figures count up; nothing moves for decoration. All of it yields to
-      prefers-reduced-motion.
+   The refusal remains the primary object: the pipeline strip inside each
+   answer card visibly halts, and the card is bordered in the refusal
+   colour. You can see the query never ran.
    ═══════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Warm paper, ink, and one restrained accent per state. */
-  --paper:      #faf8f4;
-  --paper-2:    #f4f1eb;
-  --card:       #fffefb;
-  --rule:       #e3ded4;
-  --rule-soft:  #eee9e0;
+  --bg:        #0e131a;
+  --bg-2:      #131a23;
+  --surface:   #172029;
+  --surface-2: #1d2833;
+  --line:      #26323f;
+  --line-2:    #1f2933;
 
-  --ink:        #1c1a15;
-  --ink-2:      #4a463d;
-  --ink-3:      #8a8478;
-  --ink-4:      #b5ae9f;
+  --text:      #e9e5dc;
+  --text-2:    #a8b2bd;
+  --text-3:    #6e7a87;
+  --text-4:    #4c5661;
 
-  --permit:     #2f6b4f;
-  --permit-bg:  #eef4ef;
-  --refuse:     #a8412c;
-  --refuse-bg:  #f9efeb;
-  --accent:     #b06a3b;
+  --brass:     #d8a548;
+  --brass-dim: #8a6c30;
+  --permit:    #52b98a;
+  --permit-bg: #10241c;
+  --refuse:    #e8735e;
+  --refuse-bg: #26150f;
 
-  --fin:   #3d6b8a;
-  --narr:  #6b5b8a;
-  --hr:    #a8412c;
-  --gov:   #94722f;
+  --t-fin:  #6fa8d6;
+  --t-narr: #a98fd6;
+  --t-hr:   #e8735e;
+  --t-gov:  #d8a548;
 
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
-  --sans:  ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
-  --mono:  ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-
-  --ease:  cubic-bezier(.16,.84,.44,1);
-  --r:     10px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper: #14130f; --paper-2: #1a1814; --card: #1c1a16;
-    --rule: #2e2b24; --rule-soft: #24211c;
-    --ink: #f2eee6; --ink-2: #c4bdaf; --ink-3: #8d8578; --ink-4: #5f594e;
-    --permit: #6cc79b; --permit-bg: #17251e; --refuse: #e08a70;
-    --refuse-bg: #2a1c17; --accent: #d9a06d;
-    --fin: #7fb0d4; --narr: #b09ad4; --hr: #e08a70; --gov: #d4b268;
-  }
+  --sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --ease: cubic-bezier(.2,.8,.3,1);
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html, body { height: 100%; }
 body {
-  margin: 0; background: var(--paper); color: var(--ink);
-  font-family: var(--sans); font-size: 15px; line-height: 1.6;
-  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--sans); font-size: 14.5px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column;
 }
 
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px 96px; }
-
-/* ── micro-label: the connective tissue of the whole layout ───────────── */
-.tag {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3);
+/* brass hairline across the very top — the one ornamental touch */
+body::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--brass), var(--brass-dim) 40%, transparent);
+  z-index: 20;
 }
 
-/* ── masthead ─────────────────────────────────────────────────────────── */
-header {
-  display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap;
-  padding: 40px 0 20px; border-bottom: 1px solid var(--rule); margin-bottom: 40px;
+.mono { font-family: var(--mono); }
+.lbl {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--text-3);
 }
-h1 { margin: 0; font-family: var(--serif); font-size: 25px; font-weight: 400;
-     letter-spacing: -.015em; }
-h1 em { font-style: italic; color: var(--accent); }
-header .sub { margin-left: 2px; }
-.meta { margin-left: auto; display: flex; gap: 26px; flex-wrap: wrap; }
-.meta div { text-align: right; }
-.meta .v { font-family: var(--serif); font-size: 15px; color: var(--ink);
-           margin-top: 2px; }
 
-/* ── layout ───────────────────────────────────────────────────────────── */
-.cols { display: grid; grid-template-columns: 244px 1fr; gap: 52px;
-        align-items: start; }
-@media (max-width: 900px) { .cols { grid-template-columns: 1fr; gap: 36px; } }
-
-section { margin-bottom: 44px; }
-.head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
-.head .n { font-family: var(--serif); font-style: italic; font-size: 26px;
-           color: var(--ink-4); line-height: 1; }
-.head h2 { margin: 0; font-family: var(--serif); font-size: 17px;
-           font-weight: 400; letter-spacing: -.01em; }
-
-/* ── roles ────────────────────────────────────────────────────────────── */
-.role {
-  display: block; width: 100%; text-align: left; cursor: pointer;
-  background: none; border: 0; border-top: 1px solid var(--rule-soft);
-  padding: 15px 2px; color: inherit; font: inherit;
-  transition: background .35s var(--ease), padding-left .35s var(--ease);
+/* ── top bar ──────────────────────────────────────────────────────────── */
+.bar {
+  display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+  padding: 16px 26px; border-bottom: 1px solid var(--line);
+  background: var(--bg-2); position: sticky; top: 0; z-index: 10;
 }
-.role:first-of-type { border-top: 0; }
-.role:hover { padding-left: 7px; }
-.role:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.role .nm { font-family: var(--serif); font-size: 17px; letter-spacing: .01em;
-            display: flex; align-items: center; gap: 9px; }
-.role .dot { width: 5px; height: 5px; border-radius: 50%;
-             background: var(--ink-4); transition: all .35s var(--ease); }
-.role[aria-pressed="true"] { padding-left: 11px; }
-.role[aria-pressed="true"] .dot { background: var(--accent); transform: scale(1.5); }
-.role[aria-pressed="true"] .nm { color: var(--ink); }
-.role .scope { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
-
-.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px;
-         max-height: 0; overflow: hidden; opacity: 0;
-         transition: max-height .45s var(--ease), opacity .35s var(--ease),
-                     margin-top .45s var(--ease); }
-.role[aria-pressed="true"] .chips { max-height: 130px; opacity: 1; }
-.chip { font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
-        padding: 3px 7px; border-radius: 3px; background: var(--paper-2);
-        color: var(--ink-2); white-space: nowrap; }
-.chip.off { opacity: .45; text-decoration: line-through; }
-.c-fin { color: var(--fin); } .c-narr { color: var(--narr); }
-.c-hr { color: var(--hr); }  .c-gov { color: var(--gov); }
-
-/* ── ask ──────────────────────────────────────────────────────────────── */
-.ask { position: relative; }
-.ask input {
-  width: 100%; background: transparent; border: 0;
-  border-bottom: 1px solid var(--rule); padding: 12px 92px 14px 0;
-  font-family: var(--serif); font-size: 25px; color: var(--ink);
-  letter-spacing: -.01em; transition: border-color .35s var(--ease);
+.brand { display: flex; align-items: center; gap: 11px; }
+.mark {
+  width: 26px; height: 26px; border: 1.5px solid var(--brass);
+  border-radius: 3px; display: grid; place-items: center;
+  font-family: var(--mono); font-size: 12px; font-weight: 700;
+  color: var(--brass); letter-spacing: -.04em;
 }
-.ask input::placeholder { color: var(--ink-4); }
-.ask input:focus { outline: 0; border-color: var(--ink); }
-.ask .go {
-  position: absolute; right: 0; bottom: 11px; background: none; border: 0;
-  cursor: pointer; color: var(--ink-3); padding: 5px 2px;
-  transition: color .3s var(--ease), transform .3s var(--ease);
+.brand b { font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; }
+.brand span { font-size: 11.5px; color: var(--text-3); }
+
+.roles { display: flex; gap: 3px; padding: 3px; border-radius: 7px;
+         background: var(--surface); border: 1px solid var(--line); }
+.roles button {
+  background: none; border: 0; border-radius: 5px; cursor: pointer;
+  padding: 6px 14px; font: inherit; font-size: 12px; font-weight: 550;
+  letter-spacing: .04em; color: var(--text-3);
+  transition: all .25s var(--ease);
 }
-.ask .go:hover { color: var(--accent); transform: translateX(3px); }
-.ask .go:disabled { opacity: .3; cursor: default; transform: none; }
-
-.presets { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
-.preset {
-  background: none; border: 1px solid var(--rule); border-radius: 100px;
-  padding: 6px 14px; font: inherit; font-size: 12.5px; color: var(--ink-2);
-  cursor: pointer;
-  transition: border-color .3s var(--ease), color .3s var(--ease),
-              background .3s var(--ease), transform .3s var(--ease);
+.roles button:hover { color: var(--text); }
+.roles button[aria-pressed="true"] {
+  background: var(--brass); color: #17120a; font-weight: 650;
 }
-.preset:hover { border-color: var(--accent); color: var(--accent);
-                background: var(--card); transform: translateY(-1px); }
-.preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.roles button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 
-/* ── the pipeline ribbon: the centrepiece ─────────────────────────────── */
-.ribbon { position: relative; padding-top: 14px; }
-.track { position: absolute; top: 0; left: 0; right: 0; height: 2px;
-         background: var(--rule-soft); border-radius: 2px; overflow: hidden; }
-.fill { height: 100%; width: 0; background: var(--permit); border-radius: 2px;
-        transition: width .9s var(--ease), background .3s var(--ease); }
-.fill.stopped { background: var(--refuse); }
+.stats { margin-left: auto; display: flex; gap: 22px; }
+.stats div { text-align: right; }
+.stats .v { font-family: var(--mono); font-size: 12.5px; color: var(--text-2);
+            margin-top: 2px; }
 
-.stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
-@media (max-width: 720px) { .stages { grid-template-columns: 1fr; gap: 12px; } }
+/* ── permissions strip ────────────────────────────────────────────────── */
+.perms {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 10px 26px; border-bottom: 1px solid var(--line-2);
+  background: var(--bg); font-size: 12px;
+}
+.chip {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em;
+  padding: 3px 8px; border-radius: 3px; border: 1px solid currentColor;
+  white-space: nowrap; opacity: .95;
+}
+.chip.off { opacity: .3; text-decoration: line-through; }
+.c-fin { color: var(--t-fin); } .c-narr { color: var(--t-narr); }
+.c-hr  { color: var(--t-hr); }  .c-gov  { color: var(--t-gov); }
 
-.stage { padding: 16px 16px 16px 0; opacity: .32;
-         transition: opacity .5s var(--ease); }
-.stage.on { opacity: 1; }
-.stage .n { font-family: var(--serif); font-style: italic; font-size: 15px;
-            color: var(--ink-4); }
-.stage .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .13em;
-              text-transform: uppercase; margin-top: 5px; color: var(--ink-2); }
-.stage.ok .lbl { color: var(--permit); }
-.stage.blocked .lbl { color: var(--refuse); }
-.stage .d { font-size: 12px; color: var(--ink-3); margin-top: 6px;
-            line-height: 1.45; }
+/* ── thread ───────────────────────────────────────────────────────────── */
+.scroll { flex: 1; overflow-y: auto; }
+.thread { max-width: 1000px; margin: 0 auto; padding: 30px 26px 40px; }
 
-/* ── verdict + answer ─────────────────────────────────────────────────── */
-.verdict { display: inline-flex; align-items: center; gap: 7px;
-           font-family: var(--mono); font-size: 10px; letter-spacing: .15em;
-           text-transform: uppercase; padding: 5px 11px; border-radius: 100px; }
-.verdict.ok { color: var(--permit); background: var(--permit-bg); }
-.verdict.no { color: var(--refuse); background: var(--refuse-bg); }
+.empty-state { text-align: center; padding: 70px 20px; color: var(--text-3); }
+.empty-state .big { font-size: 30px; margin-bottom: 12px; opacity: .5; }
 
-.figure { font-family: var(--serif); font-size: clamp(34px, 6vw, 52px);
-          line-height: 1.12; letter-spacing: -.025em; margin: 20px 0 0;
-          font-variant-numeric: tabular-nums lining-nums; }
-.answer { font-family: var(--serif); font-size: 19px; line-height: 1.62;
-          margin: 18px 0 0; white-space: pre-wrap; letter-spacing: -.005em; }
+.xchg { margin-bottom: 34px; animation: rise .45s var(--ease) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+/* the question */
+.q {
+  display: flex; gap: 13px; align-items: flex-start; margin-bottom: 13px;
+}
+.q .who {
+  flex-shrink: 0; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .1em; padding: 5px 9px; border-radius: 4px;
+  background: var(--surface-2); color: var(--brass); border: 1px solid var(--line);
+  margin-top: 2px;
+}
+.q .txt { font-size: 19px; font-weight: 500; letter-spacing: -.015em;
+          line-height: 1.4; padding-top: 3px; }
+
+/* the answer card — everything about this question lives inside */
+.card {
+  border: 1px solid var(--line); border-left: 3px solid var(--permit);
+  border-radius: 9px; background: var(--surface); overflow: hidden;
+  transition: border-color .3s var(--ease);
+}
+.card.no { border-left-color: var(--refuse); }
+
+.card .strip {
+  display: flex; align-items: center; gap: 0; padding: 0;
+  border-bottom: 1px solid var(--line-2); background: var(--bg-2);
+  overflow-x: auto;
+}
+.step {
+  flex: 1; min-width: 118px; padding: 9px 13px;
+  border-right: 1px solid var(--line-2); opacity: .3;
+  transition: opacity .4s var(--ease);
+}
+.step:last-child { border-right: 0; }
+.step.on { opacity: 1; }
+.step .n { font-family: var(--mono); font-size: 9px; color: var(--text-4);
+           letter-spacing: .1em; }
+.step .s { font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+           letter-spacing: .1em; text-transform: uppercase;
+           color: var(--text-2); margin-top: 3px;
+           display: flex; align-items: center; gap: 5px; }
+.step.ok  .s { color: var(--permit); }
+.step.bad .s { color: var(--refuse); }
+.step .d { font-size: 10.5px; color: var(--text-3); margin-top: 4px;
+           line-height: 1.35; }
+
+.body { padding: 20px 22px 22px; }
+
+.vrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        margin-bottom: 15px; }
+.verdict {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase;
+  padding: 5px 11px; border-radius: 4px;
+}
+.verdict.ok { color: var(--permit); background: var(--permit-bg);
+              border: 1px solid #1e4536; }
+.verdict.no { color: var(--refuse); background: var(--refuse-bg);
+              border: 1px solid #4a2418; }
+
+.figure {
+  font-size: clamp(30px, 5.2vw, 44px); font-weight: 300; letter-spacing: -.03em;
+  line-height: 1.1; font-variant-numeric: tabular-nums lining-nums;
+  margin: 4px 0 8px; color: var(--text);
+}
+.answer { font-size: 15.5px; line-height: 1.62; white-space: pre-wrap;
+          color: var(--text); margin: 0; }
 .answer.no { color: var(--refuse); }
-.note { font-size: 13.5px; color: var(--ink-3); margin-top: 14px;
-        font-style: italic; }
+.sub { font-size: 13px; color: var(--text-3); margin-top: 8px; }
 
-.cites { margin-top: 22px; display: flex; flex-direction: column; gap: 6px; }
-.cite { font-family: var(--mono); font-size: 11px; color: var(--ink-3);
-        display: flex; gap: 9px; }
-.cite span { color: var(--ink-4); }
+.cites { margin-top: 16px; display: flex; flex-direction: column; gap: 5px; }
+.cite { font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+        display: flex; gap: 8px; }
+.cite b { color: var(--text-4); font-weight: 400; }
 
-/* ── evidence ─────────────────────────────────────────────────────────── */
-.ev { border-top: 1px solid var(--rule-soft); padding: 15px 0; }
-.ev .top { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-.ev .txt { font-family: var(--serif); font-size: 14.5px; color: var(--ink-2);
-           margin-top: 7px; line-height: 1.6; }
-.ev .val { font-family: var(--serif); font-size: 23px; margin-top: 4px;
-           font-variant-numeric: tabular-nums; }
+/* evidence — collapsed by default so the answer breathes */
+details.ev { margin-top: 18px; border-top: 1px solid var(--line-2);
+             padding-top: 14px; }
+details.ev summary {
+  cursor: pointer; list-style: none; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-3);
+  display: flex; align-items: center; gap: 7px;
+  transition: color .25s var(--ease);
+}
+details.ev summary:hover { color: var(--brass); }
+details.ev summary::-webkit-details-marker { display: none; }
+details.ev summary::before { content: "▸"; transition: transform .25s var(--ease); }
+details.ev[open] summary::before { transform: rotate(90deg); }
+.item { padding: 12px 0; border-bottom: 1px solid var(--line-2); }
+.item:last-child { border-bottom: 0; }
+.item .h { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.item .t { font-size: 13px; color: var(--text-2); margin-top: 6px;
+           line-height: 1.55; }
+.item .val { font-family: var(--mono); font-size: 17px; color: var(--text);
+             margin-top: 5px; }
 
-/* ── feedback ─────────────────────────────────────────────────────────── */
-.fb { display: flex; gap: 9px; align-items: center; flex-wrap: wrap;
-      margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--rule-soft); }
-.fb button { background: none; border: 1px solid var(--rule); border-radius: 100px;
-             padding: 7px 15px; font: inherit; font-size: 12.5px;
-             color: var(--ink-2); cursor: pointer;
-             transition: all .3s var(--ease); }
-.fb button:hover { border-color: var(--accent); color: var(--accent);
-                   transform: translateY(-1px); }
-.fb input { flex: 1; min-width: 190px; background: none; border: 0;
-            border-bottom: 1px solid var(--rule); padding: 7px 2px;
-            font: inherit; font-size: 13px; color: var(--ink); }
-.fb input:focus { outline: 0; border-color: var(--ink); }
-.fb .ok { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
-          text-transform: uppercase; color: var(--permit); }
+/* feedback — emoji buttons, clearly labelled */
+.fb { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line-2); }
+.fb button {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 7px; padding: 8px 14px; font: inherit; font-size: 12.5px;
+  color: var(--text-2); cursor: pointer;
+  transition: all .25s var(--ease);
+}
+.fb button .e { font-size: 15px; line-height: 1; }
+.fb button:hover { transform: translateY(-1px); }
+.fb .good:hover { border-color: var(--permit); color: var(--permit);
+                  background: var(--permit-bg); }
+.fb .bad:hover  { border-color: var(--refuse); color: var(--refuse);
+                  background: var(--refuse-bg); }
+.fb button[aria-pressed="true"].good { border-color: var(--permit);
+  color: var(--permit); background: var(--permit-bg); }
+.fb button[aria-pressed="true"].bad { border-color: var(--refuse);
+  color: var(--refuse); background: var(--refuse-bg); }
+.fb input {
+  flex: 1; min-width: 200px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 12px;
+  font: inherit; font-size: 12.5px;
+}
+.fb input:focus { outline: 0; border-color: var(--brass); }
+.fb .said { font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+            text-transform: uppercase; color: var(--permit); }
 
-/* ── ledger ───────────────────────────────────────────────────────────── */
-.ledger { max-height: 250px; overflow-y: auto; }
-.ledger .row { display: grid; grid-template-columns: 58px 62px 1fr; gap: 12px;
-               padding: 8px 0; border-top: 1px solid var(--rule-soft);
-               font-family: var(--mono); font-size: 11px; align-items: baseline; }
-.ledger .t { color: var(--ink-4); }
-.ledger .r { color: var(--ink-2); }
-.ledger .w { color: var(--ink-3); word-break: break-word; }
-.ledger .a { color: var(--permit); } .ledger .d { color: var(--refuse); }
+.flag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+        color: var(--brass); margin-top: 12px; }
 
-.empty { color: var(--ink-4); font-style: italic; font-family: var(--serif);
-         font-size: 14px; }
+/* ── composer ─────────────────────────────────────────────────────────── */
+.composer { border-top: 1px solid var(--line); background: var(--bg-2);
+            padding: 14px 26px 16px; }
+.cwrap { max-width: 1000px; margin: 0 auto; }
+.field { display: flex; gap: 10px; align-items: center;
+         background: var(--surface); border: 1px solid var(--line);
+         border-radius: 10px; padding: 4px 4px 4px 16px;
+         transition: border-color .25s var(--ease); }
+.field:focus-within { border-color: var(--brass); }
+.field input { flex: 1; background: none; border: 0; color: var(--text);
+               font: inherit; font-size: 15px; padding: 11px 0; }
+.field input:focus { outline: 0; }
+.field input::placeholder { color: var(--text-4); }
+.send { background: var(--brass); border: 0; border-radius: 7px;
+        width: 38px; height: 38px; cursor: pointer; color: #17120a;
+        display: grid; place-items: center;
+        transition: all .25s var(--ease); }
+.send:hover { filter: brightness(1.12); }
+.send:disabled { opacity: .35; cursor: default; }
 
-footer { margin-top: 60px; padding-top: 26px; border-top: 1px solid var(--rule);
-         font-size: 13px; color: var(--ink-3); line-height: 1.75; max-width: 74ch; }
-footer code { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+.chips-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.sug { background: none; border: 1px solid var(--line); border-radius: 100px;
+       padding: 5px 12px; font: inherit; font-size: 11.5px; color: var(--text-3);
+       cursor: pointer; transition: all .25s var(--ease); }
+.sug:hover { border-color: var(--brass); color: var(--brass); }
+.hint { font-size: 11px; color: var(--text-4); margin-top: 9px; }
+.hint kbd { font-family: var(--mono); font-size: 10px; background: var(--surface-2);
+            border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
 
-/* ── motion ───────────────────────────────────────────────────────────── */
-@keyframes rise { from { opacity: 0; transform: translateY(9px); }
-                  to   { opacity: 1; transform: none; } }
-.rise { animation: rise .55s var(--ease) both; }
-.d1 { animation-delay: .05s } .d2 { animation-delay: .12s }
-.d3 { animation-delay: .19s } .d4 { animation-delay: .26s }
+/* ── audit drawer ─────────────────────────────────────────────────────── */
+details.audit { max-width: 1000px; margin: 0 auto 10px; }
+details.audit summary { cursor: pointer; list-style: none; padding: 9px 0;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--text-3);
+  display: flex; align-items: center; gap: 7px; }
+details.audit summary::-webkit-details-marker { display: none; }
+details.audit summary::before { content: "▸"; transition: transform .25s var(--ease); }
+details.audit[open] summary::before { transform: rotate(90deg); }
+.log { max-height: 200px; overflow-y: auto; border: 1px solid var(--line);
+       border-radius: 8px; background: var(--surface); padding: 4px 12px; }
+.log .r { display: grid; grid-template-columns: 56px 62px 1fr; gap: 11px;
+          padding: 6px 0; border-bottom: 1px solid var(--line-2);
+          font-family: var(--mono); font-size: 10.5px; align-items: baseline; }
+.log .r:last-child { border-bottom: 0; }
+.log .a { color: var(--permit); } .log .d { color: var(--refuse); }
+.log .w { color: var(--text-3); word-break: break-word; }
 
-@keyframes pulse { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
-.working { animation: pulse 1.1s ease-in-out infinite; }
+.spin { display: inline-block; width: 12px; height: 12px;
+        border: 2px solid var(--line); border-top-color: var(--brass);
+        border-radius: 50%; animation: sp .7s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
 
+@media (max-width: 720px) {
+  .stats { display: none; }
+  .bar, .perms, .thread, .composer { padding-left: 16px; padding-right: 16px; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important;
                            transition-duration: .01ms !important; }
@@ -269,112 +320,82 @@ footer code { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); 
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <header>
+<div class="bar">
+  <div class="brand">
+    <div class="mark">FA</div>
     <div>
-      <h1>Financial Data Agent<em>.</em></h1>
-      <div class="tag sub">Access-controlled answers from Apple's SEC filings</div>
+      <b>Financial Data Agent</b><br>
+      <span>Access-controlled answers · Apple SEC filings</span>
     </div>
-    <div class="meta" id="meta"></div>
-  </header>
+  </div>
+  <div class="roles" id="roles" role="group" aria-label="Session identity"></div>
+  <div class="stats" id="stats"></div>
+</div>
 
-  <div class="cols">
+<div class="perms" id="perms"></div>
 
-    <!-- ── identity ────────────────────────────────────────────────── -->
-    <aside>
-      <section>
-        <div class="head"><span class="n">01</span><h2>Identity</h2></div>
-        <div id="roles"><span class="empty">loading…</span></div>
-      </section>
+<div class="scroll">
+  <div class="thread" id="thread">
+    <div class="empty-state">
+      <div class="big">⌥</div>
+      <div>Ask a question below. The same question answers differently
+           depending on which role is selected.</div>
+    </div>
+  </div>
 
-      <section>
-        <div class="head"><span class="n">04</span><h2>Feedback</h2></div>
-        <div id="fblist"><span class="empty">none recorded</span></div>
-      </section>
-    </aside>
+  <div style="padding:0 26px 26px">
+    <details class="audit">
+      <summary>Audit ledger — decisions only, never document text</summary>
+      <div class="log" id="log"></div>
+    </details>
+  </div>
+</div>
 
-    <!-- ── main ────────────────────────────────────────────────────── -->
-    <main>
-      <section>
-        <form class="ask" id="form" autocomplete="off">
-          <input id="q" placeholder="Ask about the filings…" aria-label="Question">
-          <button class="go" id="go" type="submit" aria-label="Ask">
-            <svg width="26" height="14" viewBox="0 0 26 14" fill="none"
-                 stroke="currentColor" stroke-width="1.4">
-              <path d="M0 7h24M18 1l6 6-6 6" stroke-linecap="round"
-                    stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </form>
-        <div class="presets" id="presets"></div>
-      </section>
-
-      <section>
-        <div class="head"><span class="n">02</span><h2>Decision</h2></div>
-        <div class="ribbon">
-          <div class="track"><div class="fill" id="fill"></div></div>
-          <div class="stages" id="stages"></div>
-        </div>
-      </section>
-
-      <section>
-        <div class="head"><span class="n">03</span><h2>Answer</h2></div>
-        <div id="result"><span class="empty">Ask a question to begin.</span></div>
-      </section>
-
-      <section>
-        <div class="head"><span class="n">05</span><h2>Audit ledger</h2></div>
-        <div class="tag" style="margin:-10px 0 12px">
-          decisions only — never document text
-        </div>
-        <div class="ledger" id="ledger"><span class="empty">empty</span></div>
-      </section>
-
-      <footer>
-        Identity is asserted, not authenticated — a deliberate scope choice,
-        since the requirement is enforcement at the <em>data layer</em>. Every
-        figure and every access decision is computed in Python; the model only
-        phrases the result, and the system answers with no API key at all.
-        Restricted material never enters the prompt, which
-        <code>tests/test_agent.py</code> asserts by inspecting the assembled
-        context rather than the output.
-      </footer>
-    </main>
+<div class="composer">
+  <div class="cwrap">
+    <form class="field" id="form" autocomplete="off">
+      <input id="q" placeholder="Ask about revenue, margins, risk factors, headcount…"
+             aria-label="Question">
+      <button class="send" id="go" type="submit" aria-label="Ask">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+             stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+    <div class="chips-row" id="sugs"></div>
+    <div class="hint">Press <kbd>/</kbd> to focus · role switch changes what
+      the same question returns</div>
   </div>
 </div>
 
 <script>
-const STAGES = [
+const STEPS = [
   ["01","Plan","declare what answering requires"],
   ["02","Guard","check the plan against the role"],
-  ["03","Retrieve","gated SQL and gated search"],
+  ["03","Retrieve","gated SQL + gated search"],
   ["04","Compose","figures computed, prose optional"],
   ["05","Audit","append the decision"],
 ];
 
-const PRESETS = [
+const SUGGESTIONS = [
   "What was net sales in FY2025?",
   "What is revenue per employee for FY2025?",
   "What was net sales in FY2023?",
   "How did revenue change over the years?",
   "What was Greater China revenue in FY2024?",
-  "What was diluted earnings per share in FY2024?",
   "What are the main risk factors?",
   "How many employees are there?",
   "What is executive compensation?",
 ];
 
-let ctx = null, role = "CEO", last = null;
+let ctx = null, role = "CEO", turn = 0;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g,
   c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
-
 const tagClass = t => t.startsWith("financials") ? "c-fin"
-  : t.startsWith("narrative") ? "c-narr"
-  : t.startsWith("hr") ? "c-hr" : "c-gov";
+  : t.startsWith("narrative") ? "c-narr" : t.startsWith("hr") ? "c-hr" : "c-gov";
 
-/* Figures count up. Motion is tied to the value arriving, not decoration. */
 function countUp(el, text) {
   const m = text.match(/([\d,]+\.?\d*)/);
   if (!m || matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -383,229 +404,225 @@ function countUp(el, text) {
   const target = parseFloat(m[1].replace(/,/g, ""));
   if (!isFinite(target) || target > 1e12) { el.textContent = text; return; }
   const dec = (m[1].split(".")[1] || "").length;
-  const start = performance.now(), dur = 620;
-  (function frame(now) {
-    const p = Math.min((now - start) / dur, 1);
-    const eased = 1 - Math.pow(1 - p, 3);
-    const v = (target * eased).toLocaleString("en-US",
-      { minimumFractionDigits: dec, maximumFractionDigits: dec });
-    el.textContent = text.replace(m[1], v);
-    if (p < 1) requestAnimationFrame(frame);
-  })(start);
+  const t0 = performance.now();
+  (function f(now) {
+    const p = Math.min((now - t0) / 600, 1), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = text.replace(m[1], (target * e).toLocaleString("en-US",
+      { minimumFractionDigits: dec, maximumFractionDigits: dec }));
+    if (p < 1) requestAnimationFrame(f);
+  })(t0);
 }
 
-function renderMeta() {
-  $("meta").innerHTML = [
-    ["Corpus", "Apple SEC filings"],
+function renderBar() {
+  $("stats").innerHTML = [
     ["Newest", "FY" + ctx.corpus_max_fy],
     ["Model", ctx.llm_provider || "deterministic"],
     ["Feedback", ctx.feedback_count],
   ].map(([k, v]) =>
-    `<div><div class="tag">${k}</div><div class="v">${v}</div></div>`).join("");
+    `<div><div class="lbl">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  $("roles").innerHTML = ctx.roles.map(r =>
+    `<button data-role="${r.name}" aria-pressed="${r.name === role}">${r.name}</button>`
+  ).join("");
+  document.querySelectorAll(".roles button").forEach(b =>
+    b.onclick = () => { role = b.dataset.role; renderBar(); renderPerms(); });
 }
 
-function renderRoles() {
-  $("roles").innerHTML = ctx.roles.map(r => `
-    <button class="role" data-role="${r.name}" aria-pressed="${r.name === role}">
-      <div class="nm"><span class="dot"></span>${r.name}</div>
-      <div class="scope">${r.recent_years_only
-        ? `newest ${r.recent_years_only} fiscal years`
-        : "all periods"} · ${r.allowed_tags.length} of 7 categories</div>
-      <div class="chips">
-        ${r.allowed_tags.map(t =>
-          `<span class="chip ${tagClass(t)}">${t}</span>`).join("")}
-        ${r.denied_tags.map(t =>
-          `<span class="chip off ${tagClass(t)}">${t}</span>`).join("")}
-      </div>
-    </button>`).join("");
-  document.querySelectorAll(".role").forEach(b =>
-    b.onclick = () => { role = b.dataset.role; renderRoles(); });
+function renderPerms() {
+  const r = ctx.roles.find(x => x.name === role);
+  $("perms").innerHTML =
+    `<span class="lbl">${r.name} may read</span>` +
+    r.allowed_tags.map(t => `<span class="chip ${tagClass(t)}">${t}</span>`).join("") +
+    (r.denied_tags.length
+      ? `<span class="lbl" style="margin-left:8px">denied</span>` +
+        r.denied_tags.map(t =>
+          `<span class="chip off ${tagClass(t)}">${t}</span>`).join("")
+      : "") +
+    (r.recent_years_only
+      ? `<span class="lbl" style="margin-left:8px">FY${r.min_fiscal_year}+ only</span>`
+      : "");
 }
 
-/* The ribbon fills to where execution actually reached. A refusal stops it
-   at 40% and turns it red — you can see nothing downstream ran. */
-function renderStages(state) {
-  $("stages").innerHTML = STAGES.map(([n, label, hint], i) => {
+function stripHTML(state) {
+  return STEPS.map(([n, label, hint]) => {
     const s = state ? state[label.toLowerCase()] : null;
-    const cls = s === "ok" ? "on ok" : s === "blocked" ? "on blocked"
-      : s === "skipped" ? "" : s === "working" ? "on working" : "";
-    const detail = (state && state.detail && state.detail[label.toLowerCase()])
-      || hint;
-    return `<div class="stage ${cls}" style="transition-delay:${i * 70}ms">
-      <div class="n">${n}</div><div class="lbl">${label}</div>
-      <div class="d">${esc(detail)}</div></div>`;
+    const cls = s === "ok" ? "on ok" : s === "bad" ? "on bad" : "";
+    const icon = s === "ok" ? "✓" : s === "bad" ? "✕" : "";
+    const d = (state && state.detail && state.detail[label.toLowerCase()]) || hint;
+    return `<div class="step ${cls}"><div class="n">${n}</div>
+      <div class="s">${icon} ${label}</div><div class="d">${esc(d)}</div></div>`;
   }).join("");
-
-  const reached = state
-    ? (state.guard === "blocked" ? 40
-      : Object.values(state).filter(v => v === "ok").length / 5 * 100)
-    : 0;
-  const fill = $("fill");
-  fill.style.width = reached + "%";
-  fill.classList.toggle("stopped", state && state.guard === "blocked");
 }
 
-function renderResult(r) {
-  const plan = r.plan;
-  const chips = plan.tags.map(t =>
-    `<span class="chip ${tagClass(t)}">${t}</span>`).join("");
-
-  // When a single figure is shown as the hero, repeating it in the evidence
-  // list is noise — the citation is already under it.
-  const heroSingle = r.allowed && (r.figures || []).length === 1;
-  const figures = (heroSingle ? [] : (r.figures || [])).map((f, i) => `
-    <div class="ev rise d${Math.min(i + 1, 4)}">
-      <div class="top"><span class="tag">${esc(f.metric)}</span>
-        <span class="tag">${esc(f.period)}</span>
-        <span class="chip ${tagClass(f.tag)}">${f.tag}</span></div>
-      <div class="val">${esc(f.display)}</div>
-      <div class="cite"><span>└</span>${esc(f.citation)}</div>
-    </div>`).join("");
-
-  const passages = (r.passages || []).slice(0, 3).map((p, i) => `
-    <div class="ev rise d${Math.min(i + 1, 4)}">
-      <div class="top"><span class="tag">${esc(p.citation)}</span>
-        <span class="chip ${tagClass(p.tag)}">${p.tag}</span>
-        <span class="tag">score ${p.score}</span></div>
-      <div class="txt">${esc((p.snippet || p.text).slice(0, 260))}…</div>
-    </div>`).join("");
-
-  const hero = heroSingle;
-
-  $("result").innerHTML = `
-    <div class="rise" style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
-      <span class="verdict ${r.allowed ? "ok" : "no"}">
-        ${r.allowed ? "permitted" : "refused"}</span>
-      <span class="tag">${plan.intent}</span>${chips}
-    </div>
-
-    ${hero
-      ? `<p class="figure rise d1" id="hero"></p>
-         <p class="note rise d2">${esc(r.answer)}</p>`
-      : `<p class="answer rise d1 ${r.allowed ? "" : "no"}">${esc(r.answer)}</p>`}
-
-    ${r.allowed && r.citations.length ? `<div class="cites rise d2">${
-      r.citations.slice(0, 4).map(c =>
-        `<div class="cite"><span>└</span>${esc(c)}</div>`).join("")}</div>` : ""}
-
-    ${(figures || passages) ? `<div style="margin-top:26px">${figures}${passages}</div>` : ""}
-
-    ${r.reranked_by_feedback
-      ? `<div class="note rise">Ranking adjusted by earlier feedback.</div>` : ""}
-
-    ${r.allowed ? `
-      <div class="fb rise d3">
-        <button id="up">Good answer</button>
-        <button id="down">Wrong</button>
-        <input id="corr" placeholder="what should it have said?">
-        <span class="ok" id="fbnote"></span>
-      </div>` : ""}`;
-
-  if (hero) countUp($("hero"), r.figures[0].display);
-  if (r.allowed) {
-    $("up").onclick = () => sendFeedback("up");
-    $("down").onclick = () => sendFeedback("down");
-  }
+function exchangeHTML(id, question, askedAs) {
+  return `<div class="xchg" id="x${id}">
+    <div class="q"><span class="who">${askedAs}</span>
+      <div class="txt">${esc(question)}</div></div>
+    <div class="card" id="c${id}">
+      <div class="strip">${stripHTML(null)}</div>
+      <div class="body"><span style="color:var(--text-3)">
+        <span class="spin"></span> &nbsp;working…</span></div>
+    </div></div>`;
 }
 
-async function sendFeedback(verdict) {
-  const correction = $("corr") ? $("corr").value.trim() : "";
-  await fetch("/api/feedback", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      role, question: last.question, answer: last.result.answer, verdict,
-      chunk_ids: (last.result.passages || []).map(p => p.id),
-      correction: correction || null,
-    }),
-  });
-  $("fbnote").textContent = "recorded — ask again to see the change";
-  loadFeedback(); loadLedger();
-}
-
-async function ask(question) {
-  $("go").disabled = true;
-  $("result").innerHTML = '<span class="empty working">Working…</span>';
-  renderStages({ plan: "working", guard: null, retrieve: null,
-                 compose: null, audit: null });
-
-  const res = await fetch("/api/ask", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role, question }),
-  });
-  const r = await res.json();
-  last = { question, result: r };
+function fillCard(id, r, question) {
+  const card = $("c" + id);
+  card.classList.toggle("no", !r.allowed);
 
   const denied = [...(r.denied_tags || []), ...(r.denied_periods || [])];
-  renderStages({
+  card.querySelector(".strip").innerHTML = stripHTML({
     plan: "ok",
-    guard: r.allowed ? "ok" : "blocked",
-    retrieve: r.allowed ? "ok" : "skipped",
-    compose: r.allowed ? "ok" : "skipped",
+    guard: r.allowed ? "ok" : "bad",
+    retrieve: r.allowed ? "ok" : null,
+    compose: r.allowed ? "ok" : null,
     audit: "ok",
     detail: {
       plan: `${r.plan.metrics.length || "no"} metric(s) · ${r.plan.periods.join(", ")}`,
       guard: r.allowed ? "plan permitted" : `denied — ${denied.join(", ")}`,
       retrieve: r.allowed
         ? `${(r.figures || []).length} figures · ${(r.passages || []).length} passages`
-        : "not reached — nothing was fetched",
+        : "not reached — nothing fetched",
       compose: r.allowed
-        ? (r.source === "llm" ? "phrased by model" : "computed deterministically")
+        ? (r.source === "llm" ? "phrased by model" : "computed in Python")
         : "not reached",
       audit: "decision appended",
     },
   });
 
-  renderResult(r);
+  const heroSingle = r.allowed && (r.figures || []).length === 1;
+  const tags = r.plan.tags.map(t =>
+    `<span class="chip ${tagClass(t)}">${t}</span>`).join("");
+
+  const figs = (heroSingle ? [] : (r.figures || [])).map(f => `
+    <div class="item"><div class="h"><span class="lbl">${esc(f.metric)}</span>
+      <span class="lbl">${esc(f.period)}</span>
+      <span class="chip ${tagClass(f.tag)}">${f.tag}</span></div>
+      <div class="val">${esc(f.display)}</div>
+      <div class="cite"><b>└</b>${esc(f.citation)}</div></div>`).join("");
+
+  const psgs = (r.passages || []).slice(0, 3).map(p => `
+    <div class="item"><div class="h"><span class="lbl">${esc(p.citation)}</span>
+      <span class="chip ${tagClass(p.tag)}">${p.tag}</span>
+      <span class="lbl">score ${p.score}</span></div>
+      <div class="t">${esc((p.snippet || p.text).slice(0, 250))}…</div></div>`).join("");
+
+  const evCount = (heroSingle ? 0 : (r.figures || []).length)
+    + Math.min((r.passages || []).length, 3);
+
+  card.querySelector(".body").innerHTML = `
+    <div class="vrow">
+      <span class="verdict ${r.allowed ? "ok" : "no"}">
+        ${r.allowed ? "✓ permitted" : "✕ refused"}</span>
+      <span class="lbl">${r.plan.intent}</span>${tags}
+    </div>
+
+    ${heroSingle
+      ? `<div class="figure" id="h${id}"></div>
+         <div class="sub">${esc(r.answer)}</div>`
+      : `<p class="answer ${r.allowed ? "" : "no"}">${esc(r.answer)}</p>`}
+
+    ${r.allowed && r.citations.length ? `<div class="cites">${
+      r.citations.slice(0, 4).map(c =>
+        `<div class="cite"><b>└</b>${esc(c)}</div>`).join("")}</div>` : ""}
+
+    ${r.injection_detected && r.injection_detected.length
+      ? `<div class="flag">⚠ Embedded instructions detected and ignored:
+         ${r.injection_detected.join(", ")}</div>` : ""}
+
+    ${r.reranked_by_feedback
+      ? `<div class="flag">↻ Ranking adjusted by your earlier feedback</div>` : ""}
+
+    ${evCount ? `<details class="ev"><summary>Evidence · ${evCount} item(s)</summary>
+        ${figs}${psgs}</details>` : ""}
+
+    ${r.allowed ? `
+      <div class="fb">
+        <button class="good" id="g${id}" aria-pressed="false">
+          <span class="e">👍</span> Good answer</button>
+        <button class="bad" id="b${id}" aria-pressed="false">
+          <span class="e">👎</span> Wrong answer</button>
+        <input id="i${id}" placeholder="What should it have said? (optional)">
+        <span class="said" id="s${id}"></span>
+      </div>` : ""}`;
+
+  if (heroSingle) countUp($("h" + id), r.figures[0].display);
+
+  if (r.allowed) {
+    const send = async v => {
+      await fetch("/api/feedback", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role, question, answer: r.answer, verdict: v,
+          chunk_ids: (r.passages || []).map(p => p.id),
+          correction: ($("i" + id).value.trim() || null),
+        }),
+      });
+      $("g" + id).setAttribute("aria-pressed", String(v === "up"));
+      $("b" + id).setAttribute("aria-pressed", String(v === "down"));
+      $("s" + id).textContent = "recorded — ask again to see the change";
+      loadCtx(); loadLog();
+    };
+    $("g" + id).onclick = () => send("up");
+    $("b" + id).onclick = () => send("down");
+  }
+}
+
+async function ask(question) {
+  const id = ++turn, askedAs = role;
+  if (turn === 1) $("thread").innerHTML = "";
+  $("thread").insertAdjacentHTML("beforeend",
+    exchangeHTML(id, question, askedAs));
+  $("x" + id).scrollIntoView({ behavior: "smooth", block: "start" });
+  $("go").disabled = true; $("q").value = "";
+
+  const res = await fetch("/api/ask", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: askedAs, question }),
+  });
+  fillCard(id, await res.json(), question);
   $("go").disabled = false;
-  loadLedger();
+  loadLog();
 }
 
-async function loadLedger() {
-  const { rows } = await (await fetch("/api/audit?limit=22")).json();
-  $("ledger").innerHTML = rows.length ? rows.map(e => `
-    <div class="row"><span class="t">${e.ts.slice(11, 19)}</span>
-      <span class="r">${esc(e.role)}</span>
-      <span class="w"><span class="${e.allowed ? "a" : "d"}">${
-        e.allowed ? "allow" : "deny "}</span> ${esc(e.context)}</span>
-    </div>`).join("") : '<span class="empty">empty</span>';
+async function loadLog() {
+  const { rows } = await (await fetch("/api/audit?limit=24")).json();
+  $("log").innerHTML = rows.length ? rows.map(e =>
+    `<div class="r"><span style="color:var(--text-4)">${e.ts.slice(11, 19)}</span>
+     <span style="color:var(--text-2)">${esc(e.role)}</span>
+     <span class="w"><span class="${e.allowed ? "a" : "d"}">${
+       e.allowed ? "allow" : "deny "}</span> ${esc(e.context)}</span></div>`
+  ).join("") : '<div class="r"><span class="w">empty</span></div>';
 }
 
-async function loadFeedback() {
-  const { rows } = await (await fetch("/api/feedback?limit=6")).json();
-  $("fblist").innerHTML = rows.length
-    ? rows.map(r => `<div class="cite"><span>└</span>${esc(r.summary)}</div>`).join("")
-    : '<span class="empty">none recorded</span>';
+async function loadCtx() {
+  ctx = await (await fetch("/api/context")).json();
+  renderBar(); renderPerms();
 }
 
 (async function init() {
-  ctx = await (await fetch("/api/context")).json();
-  renderMeta(); renderRoles(); renderStages(null);
-
-  $("presets").innerHTML = PRESETS.map(p =>
-    `<button class="preset" type="button">${p}</button>`).join("");
-  document.querySelectorAll(".preset").forEach(b =>
-    b.onclick = () => { $("q").value = b.textContent; ask(b.textContent); });
+  await loadCtx();
+  $("sugs").innerHTML = SUGGESTIONS.map(s =>
+    `<button class="sug" type="button">${s}</button>`).join("");
+  document.querySelectorAll(".sug").forEach(b =>
+    b.onclick = () => ask(b.textContent));
 
   $("form").onsubmit = e => {
     e.preventDefault();
     const q = $("q").value.trim();
     if (q) ask(q);
   };
-
-  // "/" focuses the question, the way a search-first interface should.
   addEventListener("keydown", e => {
     if (e.key === "/" && document.activeElement !== $("q")) {
       e.preventDefault(); $("q").focus();
     }
   });
 
-  loadLedger(); loadFeedback();
+  loadLog();
 
-  // Deep links reproduce an exact demo state: /?role=CTO&q=…
   const p = new URLSearchParams(location.search);
   const want = (p.get("role") || "").toUpperCase();
-  if (ctx.roles.some(r => r.name === want)) { role = want; renderRoles(); }
-  if (p.get("q")) { $("q").value = p.get("q"); ask(p.get("q")); }
+  if (ctx.roles.some(r => r.name === want)) { role = want; renderBar(); renderPerms(); }
+  if (p.get("q")) ask(p.get("q"));
 })();
 </script>
 </body>
