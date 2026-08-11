@@ -252,6 +252,25 @@ def test_a_bare_alias_still_wins_on_a_one_word_question():
         == ["net_sales"]
 
 
+def test_a_ratio_divides_in_the_order_the_question_asked():
+    """Found in an adversarial audit. "Revenue per employee" matched
+    `headcount` before `net_sales` — aliases are tried longest-first, not in
+    reading order — and the composer divided the first by the second, giving
+    0.40 instead of 2.51. An inverted ratio is a wrong answer that looks like
+    a right one."""
+    result = ask_ceo("What is revenue per employee for FY2025?")
+
+    assert result["plan"]["metrics"][0] == "net_sales"
+    assert "2.51" in result["answer"]
+    assert "0.40" not in result["answer"]
+
+
+def test_a_derived_figure_names_its_unit():
+    """"Revenue per employee of 2.51" is ambiguous — 2.51 of what?"""
+    result = ask_ceo("What is revenue per employee for FY2025?")
+    assert "USD millions per person" in result["answer"]
+
+
 def test_an_ignored_qualifier_is_declared():
     """Reported from the console: "gross margin for products in 2021" returned
     152,836 — the CONSOLIDATED figure. Products gross margin was 105,126, and

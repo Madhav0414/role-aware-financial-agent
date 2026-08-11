@@ -127,22 +127,34 @@ class Planner:
         return tuple(metric for metric, _alias in self._alias_hits(question))
 
     def _alias_hits(self, question: str) -> list[tuple[str, str]]:
-        """Matched `(metric, alias)` pairs, so callers can see HOW specific the
-        match was. A two-word alias like "share repurchases" is a deliberate
-        human mapping; a one-word alias like "revenue" is a convenience that a
-        more specific request may legitimately override.
+        """Matched `(metric, alias)` pairs, ordered as they appear in the
+        question.
+
+        The order matters for ratios. "Revenue per employee" matched
+        `headcount` before `net_sales` — aliases are tried longest-first, not
+        in reading order — and the composer divided the first by the second,
+        reporting 0.40 instead of $2.51 million per employee. An inverted ratio
+        is a wrong answer that looks like a right one.
+
+        Callers also use the alias text to see HOW specific a match was: a
+        two-word alias like "share repurchases" is a deliberate human mapping,
+        while a one-word alias like "revenue" is a convenience that a more
+        specific request may legitimately override.
         """
         text = f" {question.lower()} "
-        hits: list[tuple[str, str]] = []
+        hits: list[tuple[int, str, str]] = []
         seen: set[str] = set()
         for alias, metric in self.aliases:
             pattern = re.compile(rf"(?<!\w){re.escape(alias)}(?!\w)")
-            if pattern.search(text) and metric not in seen:
+            match = pattern.search(text)
+            if match and metric not in seen:
                 if metric in self.metric_tags:
-                    hits.append((metric, alias))
+                    hits.append((match.start(), metric, alias))
                     seen.add(metric)
                 text = pattern.sub(" ", text)
-        return hits
+
+        hits.sort()
+        return [(metric, alias) for _, metric, alias in hits]
 
     @property
     def vocabulary(self) -> frozenset[str]:

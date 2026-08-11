@@ -41,7 +41,7 @@ in Python. A language model, if configured, only rewords the final answer — se
 Run the tests:
 
 ```bash
-pytest                                    # 155 tests, ~8 seconds
+pytest                                    # 221 tests, ~8 seconds
 ```
 
 ---
@@ -50,13 +50,46 @@ pytest                                    # 155 tests, ~8 seconds
 
 | Requirement | Where it lives |
 |---|---|
-| Ingest `.xlsx` and `.pdf` | `src/ingest/` — 4,684 facts, 741 chunks from 467 pages |
+| Ingest `.xlsx`/`.csv` and `.pdf` | `src/ingest/` — 4,685 facts, 737 chunks from 467 pages |
 | Understanding files | `data/understanding/` — facts DB, BM25 index, summaries, schema notes |
 | RBAC at the data layer | `src/access/gate.py` — one choke point, two enforcement surfaces |
 | No leakage when combining sources | `src/access/guard.py` — the derivation guard |
 | Feedback that changes behaviour | `src/feedback/` — re-ranking + correction memory |
 | Natural-language interface | `src/cli.py`, `src/web/index.html` |
-| **Bonus:** prompt injection | `src/agent/sanitize.py` — quarantine at ingest |
+| **Bonus:** prompt injection | `src/agent/sanitize.py` — quarantine at ingest **and** sanitised user input |
+
+---
+
+## What you can ask
+
+Roughly 560 metrics across 16 periods (FY2021–FY2026 and quarters), plus the
+narrative sections of every filing.
+
+| Category | Example questions |
+|---|---|
+| Income statement | net sales · gross margin · operating income · net income · cost of sales · R&D · SG&A · income taxes |
+| Per share | `What was diluted EPS in FY2024?` |
+| Balance sheet | total assets · total liabilities · cash · inventories · accounts payable · term debt |
+| Cash flow | share repurchases · dividends · depreciation and amortization |
+| Product lines | `What was iPhone revenue in FY2025?` · Mac · iPad · Services · Wearables |
+| Geography | `What was Greater China revenue in FY2024?` · Americas · Europe · Japan |
+| Quarters | `What was net sales in Q3FY2026?` |
+| **Trends** | `How did revenue change over the years?` → three years **and the computed change** |
+| Narrative | risk factors · governance · management's discussion · `Where is the company headquarters?` |
+| Restricted | headcount · executive compensation — *answer depends on your role* |
+
+Questions the corpus cannot answer are **declined rather than guessed at**:
+
+```
+"What was profit in 2026"        → I do not hold Net income for FY2026.
+                                    Available periods: FY2025, FY2024, … Q3FY2026.
+"What is the market valuation?"  → does not match a reported figure
+"gross margin for products"      → gives the consolidated figure AND says the
+                                    products split is not in the statement tables
+```
+
+That last one matters: the question was *narrowed* and the system says so
+instead of silently answering the broader one.
 
 ---
 
@@ -241,7 +274,7 @@ src/agent/       planner, tools, loop, llm, sanitize
 src/feedback/    store, rerank
 src/web/         the console
 scripts/         fetch_data, build_understanding, demo, serve, make_*
-tests/           155 tests
+tests/           221 tests
 docs/            ARCHITECTURE, FLOW, DECISIONS, TECH_INVENTORY, QUESTION_BANK, WALKTHROUGH
 ```
 

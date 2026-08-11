@@ -72,6 +72,23 @@ def _excerpt(row: dict, question: str, width: int = 460) -> str:
     return " ".join(row["text"].split())[:width]
 
 
+def _ratio_unit(numerator: dict, denominator: dict) -> str:
+    """Name the unit of a derived figure.
+
+    "Revenue per employee of 2.51" is ambiguous — 2.51 of what? Statement
+    figures are in millions, so dividing them by a headcount yields millions of
+    dollars per person, and saying so is the difference between a number and an
+    answer.
+    """
+    num_unit = numerator.get("unit", "")
+    den_unit = denominator.get("unit", "")
+    if num_unit == "USD_M" and den_unit == "people":
+        return "USD millions per person"
+    if num_unit == den_unit:
+        return "(ratio)"
+    return ""
+
+
 def _sort_periods(periods: list[str]) -> list[str]:
     """Chronological order. 'Q3FY2026' sorts after 'Q1FY2026' after 'FY2025'."""
     def key(label: str) -> tuple[int, int]:
@@ -186,14 +203,20 @@ def _compose_deterministic(figures: list[dict], passages: list[dict],
 
     by_metric = {row["metric"]: row for row in figures}
     if plan.intent == "mixed" and len(by_metric) >= 2:
-        names = list(by_metric)
-        first, second = by_metric[names[0]], by_metric[names[1]]
+        # plan.metrics is ordered as the question mentioned them, so the first
+        # is the numerator: "revenue per employee" divides revenue BY headcount.
+        ordered = [m for m in plan.metrics if m in by_metric][:2]
+        if len(ordered) < 2:
+            ordered = list(by_metric)[:2]
+        first, second = by_metric[ordered[0]], by_metric[ordered[1]]
         if second["value"]:
             ratio = first["value"] / second["value"]
             lines.append(
-                f"For {first['period']}, {_label(names[0])} was "
-                f"{first['display']} and {_label(names[1])} was "
-                f"{second['display']}, a ratio of {ratio:,.2f}.")
+                f"For {first['period']}, {_label(ordered[0])} was "
+                f"{first['display']} and {_label(ordered[1])} was "
+                f"{second['display']} — {_label(ordered[0]).lower()} per "
+                f"{_label(ordered[1]).lower()} of {ratio:,.2f} "
+                f"{_ratio_unit(first, second)}.")
         return " ".join(lines)
 
     # One metric across several periods is a trend question. Reporting three

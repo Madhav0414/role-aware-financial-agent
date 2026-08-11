@@ -65,6 +65,7 @@ def query_metrics(metrics: list[str], periods: list[str], *,
     return _envelope(True, decision.reason,
                      rows=[{"metric": f.metric, "value": f.value,
                             "display": f.format_value(), "period": f.period,
+                            "unit": f.unit,
                             "citation": f.citation(), "tag": f.tag.value}
                            for f in facts])
 

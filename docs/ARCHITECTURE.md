@@ -101,8 +101,8 @@ Two structural safeguards:
 
 | Artifact | Contents | Answers |
 |---|---|---|
-| `facts.db` | 4,684 typed figures | exact numeric questions, by SQL |
-| `index/bm25.json` | 741 narrative chunks | "what does management say…" |
+| `facts.db` | 4,685 typed figures | exact numeric questions, by SQL |
+| `index/bm25.json` | 737 narrative chunks | "what does management say…" |
 | `summaries/*.json` | per-document metadata | which document to look in |
 | `metric_tags.json` | metric → every tag it appears under | what a plan must declare |
 | `schema_notes.md` | generated description | human orientation |
