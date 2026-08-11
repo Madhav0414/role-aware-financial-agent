@@ -21,3 +21,6 @@ AI_Agent_Dev_Assignment.pdf
 
 # Personal study guide for the walkthrough call. Not a deliverable.
 AZENTIO_Complete_Guide.pdf
+
+# Excel lock files, created when a workbook is opened for inspection.
+~$*.xlsx

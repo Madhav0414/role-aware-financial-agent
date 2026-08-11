@@ -109,6 +109,13 @@ def test_an_invalid_verdict_is_rejected():
 
 
 def test_the_console_page_is_served():
+    """Asserts on structure, not on wording. An earlier version checked for a
+    heading string and broke the moment the page was redesigned — a test that
+    fails on a visual change is testing the wrong thing."""
     response = client.get("/")
+
     assert response.status_code == 200
-    assert "Decision pipeline" in response.text
+    assert "<!doctype html>" in response.text.lower()
+    # The page is only useful if it actually talks to the API.
+    for endpoint in ("/api/context", "/api/ask", "/api/feedback", "/api/audit"):
+        assert endpoint in response.text
