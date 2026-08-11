@@ -27,6 +27,7 @@ from pathlib import Path
 from src.access.model import Tag
 from src.ingest.chunker import chunk_corpus, load_config
 from src.ingest.excel_loader import load_headcount_workbook, load_statement_workbook
+from src.ingest.narrative_metrics import extract_from_corpus
 from src.understanding.facts import Fact, build_facts_db, corpus_max_fy
 from src.understanding.index import BM25Index
 
@@ -44,9 +45,24 @@ def collect_facts(raw_dir: Path = RAW) -> list[Fact]:
     for workbook in sorted([*raw_dir.glob("*.xlsx"), *raw_dir.glob("*.csv")]):
         facts += load_statement_workbook(workbook)
 
+    # Figures the filings state in prose rather than in a table. Apple's
+    # company-wide employee count lives in a sentence on page 8 of each 10-K
+    # and appears in no workbook, so a spreadsheet-only pipeline holds it as
+    # text and cannot answer "how many employees in FY2023" numerically.
+    narrative_facts = extract_from_corpus(raw_dir)
+    facts += narrative_facts
+    stated_years = {f.fiscal_year for f in narrative_facts
+                    if f.metric == "headcount"}
+
     synthetic = raw_dir / "_synthetic" / "headcount_by_department.xlsx"
     if synthetic.exists():
-        facts += load_headcount_workbook(synthetic)
+        # The departmental split is synthetic and exists only so a derived
+        # figure can leak a restricted value. Where the real filing states the
+        # company total, that reading wins — the fabricated file must never
+        # override Apple's own number.
+        facts += [f for f in load_headcount_workbook(synthetic)
+                  if not (f.metric == "headcount"
+                          and f.fiscal_year in stated_years)]
     return facts
 
 
@@ -103,6 +119,16 @@ def write_metric_tags(facts, out_dir: Path) -> int:
         json.dumps({m: sorted(tags) for m, tags in sorted(mapping.items())},
                    indent=2),
         encoding="utf-8")
+
+    # How often each metric is reported. A figure restated across many filings
+    # and periods is the headline one; a name appearing once sits in a
+    # footnote. The planner uses this to break ties between metrics whose names
+    # match a question equally well — `current_liabilities_deferred_revenue`
+    # (reported in every balance sheet) should beat `total_deferred_revenue`
+    # (a single timing-table row).
+    counts = Counter(f.metric for f in facts)
+    (out_dir / "metric_counts.json").write_text(
+        json.dumps(dict(sorted(counts.items())), indent=2), encoding="utf-8")
     return len(mapping)
 
 

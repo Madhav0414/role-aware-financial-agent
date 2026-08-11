@@ -30,15 +30,50 @@ _NARRATIVE_CUES = ("why", "explain", "describe", "what does", "what did",
                    "management say", "discuss", "outlook", "how does",
                    "tell me about", "summar")
 
+# Words carried by almost every question. Left in, they would let a metric
+# whose name contains "total" or "the" match anything.
+_QUESTION_NOISE = frozenset("""
+what was were is are the a an of in for to and or how much many did does do we
+our me tell show give please can you value amount figure number total company
+apple fiscal year quarter period report filing about with from at as on it its
+""".split())
+
+# Structural words inside metric names that carry no distinguishing meaning.
+_METRIC_NOISE = frozenset("""
+the and of in for to a an total net gross value amount
+""".split())
+
+# A relationship between two metrics is only wanted when the question asks for
+# one. "Revenue per employee" is a ratio; "other comprehensive income" merely
+# matches several metrics, and dividing them would be arithmetic nobody asked
+# for.
+_RATIO_CUES = (" per ", "ratio", "divided by", "per employee", "per share",
+               "compared to each", "relative to")
+
+
+def _coverage(metric: str, words: set[str]) -> int:
+    """How many of the question's words this metric's name actually contains.
+
+    The test for whether a vocabulary match beats a curated alias. "Deferred
+    revenue" is covered twice by `current_liabilities_deferred_revenue` and not
+    at all by `net_sales`, so the specific metric wins. A bare "revenue" is
+    covered once by dozens of footnote metrics, which is why the caller also
+    requires the question to name at least two things before switching.
+    """
+    return len({p for p in metric.split("_") if len(p) > 2} & words)
+
 
 class Planner:
     """Builds plans from questions using the precomputed artifacts."""
 
     def __init__(self, cfg: dict, metric_tags: dict[str, tuple[Tag, ...]],
-                 corpus_max_fy: int) -> None:
+                 corpus_max_fy: int,
+                 metric_counts: dict[str, int] | None = None) -> None:
         self.cfg = cfg
         self.metric_tags = metric_tags
         self.corpus_max_fy = corpus_max_fy
+        self.metric_counts = metric_counts or {}
+        self._vocabulary: frozenset[str] | None = None
 
         # Longest aliases first, so "services revenue" wins over "revenue".
         self.aliases: list[tuple[str, str]] = sorted(
@@ -53,9 +88,12 @@ class Planner:
                        corpus_max_fy: int) -> "Planner":
         raw = json.loads((understanding_dir / "metric_tags.json")
                          .read_text(encoding="utf-8"))
+        counts_path = understanding_dir / "metric_counts.json"
+        counts = json.loads(counts_path.read_text(encoding="utf-8")) \
+            if counts_path.exists() else {}
         return cls(cfg,
                    {m: tuple(Tag(t) for t in tags) for m, tags in raw.items()},
-                   corpus_max_fy)
+                   corpus_max_fy, counts)
 
     # -- components --------------------------------------------------------
 
@@ -72,15 +110,137 @@ class Planner:
           produce two metrics where the user asked for one. Aliases are tried
           longest-first for the same reason.
         """
+        return tuple(metric for metric, _alias in self._alias_hits(question))
+
+    def _alias_hits(self, question: str) -> list[tuple[str, str]]:
+        """Matched `(metric, alias)` pairs, so callers can see HOW specific the
+        match was. A two-word alias like "share repurchases" is a deliberate
+        human mapping; a one-word alias like "revenue" is a convenience that a
+        more specific request may legitimately override.
+        """
         text = f" {question.lower()} "
-        found: list[str] = []
+        hits: list[tuple[str, str]] = []
+        seen: set[str] = set()
         for alias, metric in self.aliases:
             pattern = re.compile(rf"(?<!\w){re.escape(alias)}(?!\w)")
-            if pattern.search(text) and metric not in found:
+            if pattern.search(text) and metric not in seen:
                 if metric in self.metric_tags:
-                    found.append(metric)
+                    hits.append((metric, alias))
+                    seen.add(metric)
                 text = pattern.sub(" ", text)
-        return tuple(found)
+        return hits
+
+    @property
+    def vocabulary(self) -> frozenset[str]:
+        """Every word that appears in any stored metric name.
+
+        Used to discard question words the corpus has no concept of. "What were
+        term debt levels" contains "levels", which names nothing — demanding it
+        match would reject `total_term_debt`, the metric being asked for.
+        """
+        if self._vocabulary is None:
+            self._vocabulary = frozenset(
+                part for metric in self.metric_tags
+                for part in metric.split("_") if len(part) > 2)
+        return self._vocabulary
+
+    def content_words(self, question: str) -> set[str]:
+        """The words in a question that actually name something in the corpus.
+
+        Filtered against the stored vocabulary, so a phrasing word the user
+        added ("levels", "balances", "figures") cannot block a match.
+        """
+        words = {w for w in re.findall(r"[a-z]+", question.lower())
+                 if w not in _QUESTION_NOISE and len(w) > 2}
+        return {w for w in words if w in self.vocabulary}
+
+    def match_vocabulary(self, question: str) -> tuple[str, ...]:
+        """Match a question against EVERY stored metric name, not just aliases.
+
+        The curated alias list resolves ambiguity for metrics people phrase
+        loosely — "revenue" must mean consolidated net sales, not one of forty
+        revenue-ish footnote lines. But a hand-written list can only ever cover
+        what was written down, which left 530 of 561 stored metrics unreachable
+        in plain English.
+
+        The rule here is that **every content word of the question must appear
+        in the metric name** — not the reverse. Category scoping renamed
+        `accounts_payable` to `current_liabilities_accounts_payable`, so
+        requiring the metric's words to appear in the question would reject the
+        very metric being asked for. Asking for "accounts payable" should find
+        it despite the section prefix the user could not know about.
+
+        Ranked by fewest extra words, so a question about "deferred revenue"
+        gets `current_liabilities_deferred_revenue` rather than
+        `deferred_tax_assets_deferred_revenue`.
+        """
+        words = self.content_words(question)
+        if not words:
+            return ()
+
+        # A word can exist in the vocabulary and still be the wrong one to
+        # insist on: "balances" appears inside `..._beginning_balances`, so it
+        # survives filtering and then blocks "commercial paper balances" from
+        # reaching `commercial_paper`. If the full set matches nothing, drop
+        # the least distinctive word and try again — the rarest words carry the
+        # meaning.
+        exact = self._metrics_containing(words)
+        if exact or len(words) < 2:
+            return exact
+
+        # A word can exist in the vocabulary and still be the wrong one to
+        # insist on: "balances" appears inside `..._beginning_balances`, so it
+        # blocks "commercial paper balances" from reaching `commercial_paper`.
+        #
+        # Try dropping each single word and keep the best result. Exactly one
+        # word is dropped, never more — relaxing further finds a match for
+        # anything, which is how "headcount change over the years" once landed
+        # on an unrecognised tax-benefit metric.
+        # A relaxed match must still account for at least two of the question's
+        # words. One is not evidence: "market valuation" would find any metric
+        # mentioning "market", and "risk factors" would find a concentration
+        # risk footnote — both confidently wrong answers to questions the
+        # corpus should decline.
+        best: tuple[str, ...] = ()
+        best_cover = 1
+        for dropped in words:
+            found = self._metrics_containing(words - {dropped})
+            if found and _coverage(found[0], words) > best_cover:
+                best, best_cover = found, _coverage(found[0], words)
+        return best
+
+    def _commonness(self, word: str) -> int:
+        """How many metric names contain this word. Higher means less useful."""
+        return sum(1 for metric in self.metric_tags
+                   if word in metric.split("_"))
+
+    def _metrics_containing(self, required: set[str]) -> tuple[str, ...]:
+        """Metrics whose name contains every required word, best first.
+
+        Ranked by how often the metric is actually reported, then by fewest
+        unrelated extra words, then name length.
+
+        Frequency leads because every candidate already contains all the
+        question's words — the remaining choice is between a figure restated in
+        every balance sheet and a name appearing once in a footnote. Ranking on
+        name brevity instead returned `total_deferred_revenue` ($13 million,
+        a timing-table row) over `current_liabilities_deferred_revenue`
+        ($8,249 million, the balance sheet line the question meant).
+        """
+        if not required:
+            return ()
+
+        candidates: list[tuple[int, int, int, str]] = []
+        for metric in self.metric_tags:
+            parts = {p for p in metric.split("_") if len(p) > 2}
+            if not required <= parts:
+                continue
+            extra = len({p for p in parts if p not in _METRIC_NOISE} - required)
+            candidates.append((-self.metric_counts.get(metric, 0), extra,
+                               len(metric), metric))
+
+        candidates.sort()
+        return tuple(metric for *_, metric in candidates[:3])
 
     def suggest_metrics(self, question: str, limit: int = 6) -> list[str]:
         """Stored metric names closest to the words in the question.
@@ -168,7 +328,52 @@ class Planner:
     # -- the plan ----------------------------------------------------------
 
     def plan(self, question: str) -> QueryPlan:
-        metrics = self.find_metrics(question)
+        alias_hits = self._alias_hits(question)
+        aliased = tuple(metric for metric, _ in alias_hits)
+        words = self.content_words(question)
+        topic = self.find_topic_tags(question)
+
+        # How specific the curated match was. A multi-word alias is a decision
+        # somebody made deliberately — "share repurchases" maps to the cash
+        # flow line, not to whichever metric happens to contain both words.
+        alias_specificity = max((len(alias.split()) for _, alias in alias_hits),
+                                default=0)
+
+        # A question about risk, governance or management commentary is asking
+        # for prose, not a figure. Searching the metric vocabulary for it finds
+        # something — "risk factors" reaches a concentration-risk footnote —
+        # and answering with that number is worse than answering with the
+        # passage the question actually wanted.
+        narrative_topic = bool(topic) and all(
+            t in (Tag.NARR_RISK, Tag.NARR_MDNA, Tag.GOVERNANCE) for t in topic)
+        wants_narrative_prose = narrative_topic or any(
+            cue in question.lower() for cue in _NARRATIVE_CUES)
+
+        vocabulary = () if wants_narrative_prose \
+            else self.match_vocabulary(question)
+
+        # A vocabulary match beats an alias only when it is STRICTLY more
+        # specific — that is, its name still contains what the alias matched,
+        # plus more. "Deferred revenue" contains "revenue", so the alias fires
+        # and answers with consolidated net sales; `current_liabilities_
+        # deferred_revenue` contains "revenue" too and is what was asked for.
+        #
+        # Without the containment check, any extra word in the question was
+        # enough to abandon a correct alias: "how did headcount change over the
+        # years" wandered off to an unrecognised tax-benefit metric.
+        metrics = aliased or vocabulary
+        if aliased and vocabulary and len(words) >= 2 \
+                and alias_specificity <= 1 \
+                and _coverage(vocabulary[0], words) > _coverage(aliased[0], words):
+            metrics = vocabulary
+
+        # Several metrics only make sense together when the question asks for a
+        # RELATIONSHIP. Without a cue like "per", reporting a ratio between two
+        # loosely-matched metrics produces arithmetic nobody asked for.
+        wants_ratio = any(cue in f" {question.lower()} " for cue in _RATIO_CUES)
+        if len(metrics) > 1 and not wants_ratio:
+            metrics = metrics[:1]
+
         periods = self.find_periods(question)
 
         # Union of tags from matched metrics and from the question's topic.
@@ -183,7 +388,7 @@ class Planner:
         lowered = question.lower()
         wants_narrative = any(cue in lowered for cue in _NARRATIVE_CUES)
 
-        if len(metrics) > 1:
+        if len(metrics) > 1 and wants_ratio:
             intent = "mixed"
         elif metrics and not wants_narrative:
             intent = "metric"

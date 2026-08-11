@@ -191,6 +191,76 @@ def test_analyst_refused_an_out_of_window_year(tmp_path):
     assert "FY2023" in result["denied_periods"]
 
 
+# -- reaching every stored metric -----------------------------------------
+
+def test_headcount_comes_from_the_filing_not_the_synthetic_file():
+    """Apple states its employee count in prose on page 8 of each 10-K and in
+    no workbook. A spreadsheet-only pipeline held that sentence as text and
+    could not answer it numerically — FY2023 was missing entirely, because the
+    synthetic departmental file only covers FY2024 and FY2025."""
+    result = ask_ceo("how many employees were there as of sep 2023")
+
+    assert result["allowed"] is True
+    assert "161,000" in result["answer"]
+    assert any("10-K_FY2023" in c for c in result["citations"])
+
+
+def test_headcount_is_available_for_every_annual_report():
+    result = ask_ceo("How did headcount change over the years?")
+    for figure in ("161,000", "164,000", "166,000"):
+        assert figure in result["answer"]
+
+
+@pytest.mark.parametrize("question,expected_metric", [
+    ("What was accounts payable in FY2025?", "accounts_payable"),
+    ("What were inventories in FY2025?", "inventories"),
+    ("What were term debt levels in FY2025?", "term_debt"),
+    ("What were commercial paper balances in FY2025?", "commercial_paper"),
+    ("What was depreciation and amortization in FY2024?", "depreciation"),
+])
+def test_metrics_the_alias_list_never_named_are_reachable(question,
+                                                          expected_metric):
+    """561 metrics are stored and roughly 30 were hand-aliased. The rest have
+    to be reachable by matching the question against the stored vocabulary, or
+    most of the ingested data is unusable."""
+    result = ask_ceo(question)
+    assert result["plan"]["metrics"], f"nothing matched for {question!r}"
+    assert expected_metric in result["plan"]["metrics"][0]
+    assert result["figures"]
+
+
+def test_a_specific_request_beats_a_loose_alias():
+    """"Deferred revenue" contains "revenue", so the alias fires and answers
+    with consolidated net sales — a confidently wrong answer to a question the
+    corpus can actually answer."""
+    result = ask_ceo("What was deferred revenue in FY2024?")
+    assert "deferred_revenue" in result["plan"]["metrics"][0]
+    assert "net_sales" not in result["plan"]["metrics"]
+
+
+def test_a_curated_multi_word_alias_is_not_overridden():
+    """"Share repurchases" is a deliberate mapping to the cash flow line, not
+    to whichever metric happens to contain both words."""
+    result = ask_ceo("How much was spent on share repurchases in FY2025?")
+    assert "financing_activities" in result["plan"]["metrics"][0]
+
+
+def test_a_bare_alias_still_wins_on_a_one_word_question():
+    """"Revenue" must stay consolidated net sales rather than wandering into
+    one of the forty footnote metrics whose name contains the word."""
+    assert ask_ceo("What was revenue in FY2025?")["plan"]["metrics"] \
+        == ["net_sales"]
+
+
+def test_narrative_questions_do_not_hunt_for_metrics():
+    """"Risk factors" reaches a concentration-risk footnote if the vocabulary
+    is searched, and answering with that number is worse than answering with
+    the passage the question actually wanted."""
+    result = ask_ceo("What are the main risk factors?")
+    assert result["plan"]["metrics"] == []
+    assert result["answer"].startswith("From the filings")
+
+
 # -- trends and comparisons ----------------------------------------------
 
 def test_a_comparison_question_returns_several_years(planner):

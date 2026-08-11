@@ -1428,3 +1428,84 @@ alongside `*.xlsx`. A test drives a real CSV through the full path.
 
 **REJECTED** — Converting a workbook to CSV and committing it as corpus data.
 It would add a fabricated file to prove a capability a test proves better.
+
+---
+
+## Part 17 — Answering from everything that was ingested
+
+### D80 · Figures stated in prose are extracted too ⭐
+
+**WHY** — Reported from the console: *"how many employees were there as of sep
+2023"* returned "I do not hold Headcount for FY2023" — while page 8 of the
+FY2023 10-K says plainly *"approximately 161,000 full-time equivalent
+employees."*
+
+The sentence was ingested and correctly tagged. But the *numeric* headcount
+metric came only from the synthetic departmental spreadsheet, which covers
+FY2024 and FY2025. The system held the answer as prose and could not use it as
+a number.
+
+**HOW** — `src/ingest/narrative_metrics.py` extracts figures the filings state
+in words. The employee count now comes from Apple's own sentence, with a real
+citation (`10-K_FY2023.pdf p.8`), for all three years. Where the filing states
+the total, that reading **overrides** the synthetic file — a fabricated number
+must never outrank the company's own.
+
+Deliberately narrow: a small set of explicit patterns, not a general "find
+numbers in text" pass, which would produce confident nonsense at scale.
+
+**REJECTED** — Adding FY2023 rows to the synthetic spreadsheet. It would have
+made the symptom disappear while leaving the real figure unread, and deepened
+the system's dependence on fabricated data.
+
+---
+
+### D81 · The alias list stopped being the limit of what can be asked ⭐
+
+**WHY** — 561 metrics were stored; roughly 30 were hand-aliased. Everything
+else — accounts payable, inventories, term debt, commercial paper, depreciation
+— was ingested and unreachable. Most of the corpus was inert.
+
+**HOW** — When no curated alias matches, the question is matched against the
+**full stored vocabulary**. The rule is that every content word of the question
+must appear in the metric name — not the reverse, because category scoping
+renamed `accounts_payable` to `current_liabilities_accounts_payable` and the
+user cannot know the prefix.
+
+Four constraints keep it from becoming a random-metric generator, each added
+after it produced a wrong answer:
+
+- **Question words are filtered against the vocabulary**, so a phrasing word
+  the corpus has no concept of ("levels", "figures") cannot block a match.
+- **Exactly one word may be dropped** when nothing matches, and the result must
+  still cover two words. Relaxing further found a match for anything —
+  "headcount change over the years" once landed on an unrecognised tax-benefit
+  metric.
+- **Narrative questions never search the vocabulary.** "Risk factors" reaches a
+  concentration-risk footnote, and answering with that number is worse than
+  answering with the passage the question wanted.
+- **Frequency ranks the candidates.** Every survivor already contains all the
+  question's words, so the remaining choice is between a figure restated in
+  every balance sheet and a name appearing once in a footnote. Ranking on name
+  brevity returned deferred revenue of **$13 million** (a timing-table row)
+  instead of **$8,249 million** (the balance sheet line).
+
+**REJECTED** — Writing more aliases. It is the same fix repeated forever, and
+it fails the moment a new filing introduces a line nobody anticipated.
+
+---
+
+### D82 · A curated multi-word alias outranks a vocabulary match
+
+**WHY** — Vocabulary matching correctly beats a *loose* alias: "deferred
+revenue" should not answer with consolidated net sales just because it contains
+"revenue". But applying that rule blindly broke the opposite case — "share
+repurchases" is a deliberate mapping to the cash flow line, and vocabulary
+matching redirected it to `amount_of_share_repurchases`, a footnote row.
+
+**HOW** — Overriding is allowed only when the alias that matched was a **single
+word**. One word is a convenience; two or more is a decision somebody made on
+purpose.
+
+**REJECTED** — Trusting whichever match scored higher. Scores compare badly
+across a hand-curated mapping and a mechanical one.
