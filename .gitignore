@@ -12,17 +12,9 @@ data/feedback.db
 
 .env
 
-# Reference material unrelated to this submission.
-AI-Collaboration-Field-Guide.pdf
-
 # The assignment brief itself. Azentio wrote it; it does not belong in the
 # repository being submitted back to them.
 AI_Agent_Dev_Assignment.pdf
 
-# Personal study guide for the walkthrough call. Not a deliverable.
-AZENTIO_Complete_Guide.pdf
-
 # Excel lock files, created when a workbook is opened for inspection.
 ~$*.xlsx
-
-AZENTIO_Voiceover_Script.pdf

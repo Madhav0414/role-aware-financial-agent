@@ -20,8 +20,9 @@ Three consequences follow, and they are the reason for the choice:
    it can be asserted rather than sampled.
 2. **Reproducible.** The same question returns the same figures every time. A
    regulator, or an evaluator, cannot audit a number that varies per run.
-3. **Runs with no key.** The model is optional. Half the assignment's marks are
-   for running end to end, and that should not depend on someone else's billing.
+3. **Runs with no key.** The model is optional. A system that stops answering
+   when a third-party key expires has made its core function depend on someone
+   else's billing.
 
 ---
 

@@ -48,9 +48,9 @@ Worth naming, because these are deliberate choices and not incidental imports.
 | Module | Role | Why not a library |
 |---|---|---|
 | `sqlite3` | `facts.db` and `feedback.db` | Ships with Python, needs no server, and the whole corpus is 4,685 rows. A real database is the 100× answer, not this one. |
-| `re` | Tagging, period parsing, injection detection, tokenisation | The patterns are small and inspectable. A parser generator would obscure what an interviewer can read directly. |
+| `re` | Tagging, period parsing, injection detection, tokenisation | The patterns are small and inspectable. A parser generator would obscure rules that must stay readable, because they decide sensitivity. |
 | `dataclasses` | `Tag`, `Role`, `Decision`, `Chunk`, `Fact`, `QueryPlan` | `frozen=True` makes `Role` immutable, which is a security property: a role is passed to every tool in a request, and a mutable one would make an access decision shared mutable state. |
-| `json` | Audit log (JSON Lines), BM25 index, summaries | The index stays readable with a text editor during a walkthrough instead of being an opaque binary. |
+| `json` | Audit log (JSON Lines), BM25 index, summaries | The index stays inspectable with a text editor instead of being an opaque binary, which matters when a retrieval result needs explaining. |
 | `subprocess` | Drives Edge headless for HTML→PDF | Avoids a heavyweight PDF-generation dependency for something the OS already ships. |
 
 ---

@@ -4,7 +4,7 @@ Every meaningful choice made while building this system, with the reasoning
 behind it. Code shows *what* changed; this file shows *why*.
 
 Read the **REJECTED** line in each box first — the alternative not taken is
-usually what an interviewer asks about.
+usually where the reasoning actually lives.
 
 Model used throughout: **Claude Opus 5**. Recorded because behaviour differs
 between models, and six months from now that matters when tracing a decision.
@@ -146,7 +146,7 @@ table queried by SQL; narrative passages land in the BM25 index. A planner
 routes each question to the right one.
 
 **REJECTED** — One unified vector store for everything. Simpler to build, and
-it would fail the first question an evaluator asks.
+it fails the first exact-figure question asked of it.
 
 ---
 
@@ -161,8 +161,8 @@ facts, a keyword planner, string formatting — wired through the real gate and
 guard. **From that commit onward there is always something submittable**, and
 every later task improves a working system rather than building toward one.
 
-**REJECTED** — Finishing ingestion properly first. Cleanest code, worst risk
-profile against the criterion that carries half the marks.
+**REJECTED** — Finishing ingestion properly first. Cleanest code, and the worst
+risk profile: a perfect loader and nothing that runs.
 
 ---
 
@@ -812,8 +812,8 @@ can regenerate every artifact from the committed raw files.
 
 ### D47 · The model is optional, and it proved its worth immediately
 
-**WHY** — Half the assignment's marks are for running end to end. A system that
-fails because an evaluator has no key has failed for a reason unrelated to its
+**WHY** — Running end to end is the baseline requirement. A system that fails
+because whoever runs it has no key has failed for a reason unrelated to its
 design.
 
 **HOW** — `complete()` returns `None` on *any* failure — missing key, missing
@@ -828,7 +828,8 @@ right refusals — and the only visible difference was plainer prose. A total
 provider outage cost the demo nothing.
 
 **REJECTED** — Requiring a key and failing loudly without one. Cleaner code,
-and it would have lost half the marks to someone else's billing page.
+and the system would have been dead on arrival behind someone else's billing
+page.
 
 ---
 
@@ -1022,8 +1023,8 @@ security path, and a model is what the attacker is targeting.
 
 ### D59 · Four layers, and the weakest is named as weak
 
-**WHY** — Claiming prompt injection is "solved" would be false, and an
-interviewer will know it.
+**WHY** — Claiming prompt injection is "solved" would be false, and a defence
+documented as stronger than it is gets relied on as though it were.
 
 **HOW** — Quarantine at ingest (structural — the text never arrives).
 Delimiting and labelling in the system prompt (mitigation). No text-to-execution
@@ -1132,12 +1133,12 @@ documented scope decision into an open door.
 
 ### D65 · Deep links reproduce an exact demo state
 
-**WHY** — Typing a question live during a walkthrough is a chance to fumble it,
-and the refusal cases are the ones worth showing precisely.
+**WHY** — Retyping a question by hand to reproduce a result invites a typo, and
+the refusal cases are the ones that have to be shown precisely.
 
 **HOW** — `/?role=CTO&q=...` selects the role and runs the question on load.
-Costs six lines, and makes every scenario in the recording reproducible by
-whoever watches it.
+Costs six lines, and makes any scenario reproducible by whoever receives the
+link.
 
 **REJECTED** — A scripted demo mode. More code, and it would show a rehearsal
 rather than the real system.

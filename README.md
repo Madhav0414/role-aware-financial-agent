@@ -257,8 +257,6 @@ The quiet one is the tag taxonomy: it is hand-maintained, and at 100× the
 documents its coverage rots silently while untagged data defaults into
 *visible*.
 
-Expanded in [`docs/QUESTION_BANK.md`](docs/QUESTION_BANK.md).
-
 ---
 
 ## Repository layout
@@ -275,7 +273,7 @@ src/feedback/    store, rerank
 src/web/         the console
 scripts/         fetch_data, build_understanding, demo, serve, make_*
 tests/           221 tests
-docs/            ARCHITECTURE, FLOW, DECISIONS, TECH_INVENTORY, QUESTION_BANK, WALKTHROUGH
+docs/            ARCHITECTURE, FLOW, DECISIONS, TECH_INVENTORY
 ```
 
 ---
