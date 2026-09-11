@@ -6,9 +6,6 @@ behind it. Code shows *what* changed; this file shows *why*.
 Read the **REJECTED** line in each box first — the alternative not taken is
 usually where the reasoning actually lives.
 
-Model used throughout: **Claude Opus 5**. Recorded because behaviour differs
-between models, and six months from now that matters when tracing a decision.
-
 ---
 
 ## Part 1 — Data acquisition
