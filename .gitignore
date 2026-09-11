@@ -12,8 +12,7 @@ data/feedback.db
 
 .env
 
-# The assignment brief itself. Azentio wrote it; it does not belong in the
-# repository being submitted back to them.
+# The assignment brief itself — provided by the company, not mine to redistribute.
 AI_Agent_Dev_Assignment.pdf
 
 # Excel lock files, created when a workbook is opened for inspection.

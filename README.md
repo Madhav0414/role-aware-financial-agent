@@ -5,7 +5,7 @@ respect **who is asking**, enforced at the data layer — and the system refuses
 questions whose answer would leak restricted data by arithmetic, even when the
 restricted value is never printed.
 
-Built for the Azentio AI Agent Developer assignment.
+Built as a take-home assignment for an AI Agent Developer role.
 
 ```
 CEO      "What was net sales in FY2025?"      →  $416,161 million  [10-K_FY2025 p.30]

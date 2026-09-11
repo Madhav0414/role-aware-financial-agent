@@ -43,7 +43,7 @@ import pandas as pd
 # this script only needs to run if you want to refresh the data.
 UA = os.environ.get(
     "SEC_USER_AGENT",
-    "azentio-assignment financial-agent (set SEC_USER_AGENT to your contact)",
+    "role-aware-financial-agent (set SEC_USER_AGENT to your contact)",
 )
 CIK = 320193  # Apple Inc.
 RAW = Path("data/raw")

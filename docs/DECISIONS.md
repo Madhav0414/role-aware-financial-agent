@@ -352,7 +352,7 @@ completes the equation.
 
 **REJECTED** — Answering with the permitted portion and noting the omission.
 Friendlier, and it defeats the control it appears to respect. This was one of
-the four questions emailed to Azentio; hard refusal is the stated default.
+the four clarification questions I raised; hard refusal is the stated default.
 
 ---
 
