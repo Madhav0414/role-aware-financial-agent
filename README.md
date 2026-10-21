@@ -18,6 +18,8 @@ layer** decided — not the prompt.
 
 ## Try it live
 
+**Live demo: [role-aware-financial-agent.onrender.com](https://role-aware-financial-agent.onrender.com)** (free hosting: after a quiet spell the first visit takes about a minute)
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Madhav0414/role-aware-financial-agent)
 
 Pick a role at the top of the console and ask the same question as each one.
