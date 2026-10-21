@@ -16,6 +16,22 @@ ANALYST  "What was net sales in FY2023?"      →  REFUSED · outside permitted 
 The same question. The same corpus. Different answers, because the **data
 layer** decided — not the prompt.
 
+## Try it live
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Madhav0414/role-aware-financial-agent)
+
+Pick a role at the top of the console and ask the same question as each one.
+The hosted demo runs on Render's free plan from [`render.yaml`](render.yaml): the
+build rebuilds the understanding layer from the filings in this repository,
+and after a quiet spell the first visit takes about a minute to wake the server.
+
+On the hosted demo the role switcher is the point — the data is Apple's public
+filings plus a synthetic headcount split, so nothing on it is secret. Two
+differences from a local run: no language model is configured (every answer is
+computed deterministically), and `PUBLIC_DEMO=1` keeps 👍/👎 re-ranking but
+drops free-text corrections, because stored corrections are shown to later
+askers and a public page should not show strangers' text to everyone.
+
 ---
 
 ## Quick start
@@ -41,7 +57,7 @@ in Python. A language model, if configured, only rewords the final answer — se
 Run the tests:
 
 ```bash
-pytest                                    # 221 tests, ~8 seconds
+pytest                                    # 223 tests, ~10 seconds
 ```
 
 ---
@@ -234,7 +250,8 @@ Stated plainly rather than left to be discovered:
 - **Identity is asserted, not authenticated.** The brief asks for enforcement
   at the data layer, so the time went into making that layer unbypassable
   rather than into a login screen. Swapping in real auth changes only which
-  `Role` object gets constructed. The server binds `127.0.0.1` for this reason.
+  `Role` object gets constructed. `scripts/serve.py` binds `127.0.0.1` for this
+  reason; the public demo is the deliberate exception, over public data only.
 - **No persistence beyond SQLite**, no multi-tenancy, no multi-company.
 - **Two known data-quality limits**, both recorded with their fixes:
   306 of 2,561 metric/period keys remain ambiguous inside footnote tables
@@ -272,7 +289,7 @@ src/agent/       planner, tools, loop, llm, sanitize
 src/feedback/    store, rerank
 src/web/         the console
 scripts/         fetch_data, build_understanding, demo, serve, make_*
-tests/           221 tests
+tests/           223 tests
 docs/            ARCHITECTURE, FLOW, DECISIONS, TECH_INVENTORY
 ```
 

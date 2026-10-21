@@ -24,7 +24,7 @@ library cannot earn a line in this table, it does not go in `requirements.txt`.
 
 | Library | Why | What breaks without it |
 |---|---|---|
-| **pytest** | 221 tests, parameterised heavily — value parsing, period labels, injection patterns. | No test suite. Every claim in the docs becomes an assertion rather than a demonstration. |
+| **pytest** | 223 tests, parameterised heavily — value parsing, period labels, injection patterns. | No test suite. Every claim in the docs becomes an assertion rather than a demonstration. |
 | **httpx** | Required by FastAPI's `TestClient`. | `tests/test_api.py` is skipped; the other 211 tests still run. |
 
 ---

@@ -1,0 +1,20 @@
+# Deploy on Render: render.com → New → Blueprint → pick this repository.
+services:
+  - type: web
+    name: role-aware-financial-agent
+    runtime: python
+    plan: free
+    # The filings are in the repository; the understanding layer is rebuilt
+    # from them (about 5 seconds) rather than committed.
+    buildCommand: pip install -r requirements.txt && python scripts/build_understanding.py
+    # serve.py binds 127.0.0.1 on purpose; the hosted demo runs uvicorn directly.
+    startCommand: uvicorn src.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      # Votes still re-rank; free-text corrections are dropped (see src/api.py).
+      - key: PUBLIC_DEMO
+        value: "1"
+      # No LLM key on purpose: every answer is computed deterministically, and
+      # a public page must not spend someone's API credit.

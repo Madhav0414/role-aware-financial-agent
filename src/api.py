@@ -11,10 +11,17 @@ decision the CLI makes and is stated plainly in the README: the brief asks for
 enforcement at the data layer, so the effort went there rather than into a
 login screen. Swapping in real authentication changes only how `Role` is
 chosen here.
+
+The hosted demo sets PUBLIC_DEMO=1. There the role picker is the point —
+visitors switch roles to watch the same question get different answers over
+public SEC data — but free-text corrections are dropped: stored corrections
+are shown to later askers, and on a public site that would be anyone's text in
+front of everyone. Votes still work; they only reorder already-gated results.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -32,6 +39,8 @@ from src.understanding.facts import corpus_max_fy
 ROOT = Path(__file__).resolve().parent.parent
 UNDERSTANDING = ROOT / "data" / "understanding"
 WEB = Path(__file__).resolve().parent / "web"
+
+PUBLIC_DEMO = os.environ.get("PUBLIC_DEMO") == "1"
 
 app = FastAPI(title="RBAC Financial Data Agent", docs_url="/api/docs")
 
@@ -90,7 +99,16 @@ def context() -> dict:
         "corpus_max_fy": max_fy,
         "llm_provider": llm.active_provider(),
         "feedback_count": len(store.all_records()),
+        "public_demo": PUBLIC_DEMO,
     }
+
+
+@app.get("/api/health")
+def health() -> dict:
+    """For the host's health check: up, and the understanding layer is built."""
+    if not (UNDERSTANDING / "facts.db").exists():
+        raise HTTPException(503, "understanding layer not built")
+    return {"status": "ok"}
 
 
 @app.post("/api/ask")
@@ -118,10 +136,12 @@ def ask(request: AskRequest) -> dict:
 def submit_feedback(request: FeedbackRequest) -> dict:
     if request.verdict not in ("up", "down"):
         raise HTTPException(400, "verdict must be 'up' or 'down'")
+    # Enforced here, not only by hiding the input: a client can post anything.
+    correction = None if PUBLIC_DEMO else request.correction
     row_id = store.record(role=request.role, question=request.question,
                           answer=request.answer, verdict=request.verdict,
                           chunk_ids=request.chunk_ids,
-                          correction=request.correction)
+                          correction=correction)
     return {"id": row_id, "total": len(store.all_records())}
 
 

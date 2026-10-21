@@ -679,7 +679,7 @@ function fillCard(id, r, question) {
           <span class="e">👍</span> Good answer</button>
         <button class="bad" id="b${id}" aria-pressed="false">
           <span class="e">👎</span> Wrong answer</button>
-        <input id="i${id}" placeholder="What should it have said? (optional)">
+        ${ctx.public_demo ? "" : `<input id="i${id}" placeholder="What should it have said? (optional)">`}
         <span class="said" id="s${id}"></span>
       </div>` : ""}`;
 
@@ -692,7 +692,7 @@ function fillCard(id, r, question) {
         body: JSON.stringify({
           role, question, answer: r.answer, verdict: v,
           chunk_ids: (r.passages || []).map(p => p.id),
-          correction: ($("i" + id).value.trim() || null),
+          correction: ($("i" + id)?.value.trim() || null),
         }),
       });
       $("g" + id).setAttribute("aria-pressed", String(v === "up"));
